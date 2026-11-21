@@ -18,7 +18,7 @@
     { polje: "stevilo_poskodovanih", oznaka: "Število poškodovanih", tip: "stevilo" },
     { polje: "prioriteta", oznaka: "Prioriteta", tip: "prioriteta", obvezno: true, kljucno: true },
     { polje: "potrebna_oprema", oznaka: "Potrebna oprema", tip: "seznam" },
-    { polje: "predlagana_enota", oznaka: "Predlagana enota", tip: "enota", obvezno: true, kljucno: true },
+    { polje: "predlagana_enota", oznaka: "Vozilo za odhod", tip: "enota", obvezno: true, kljucno: true },
     { polje: "kontakt", oznaka: "Kontakt klicatelja", tip: "besedilo" },
   ];
   const KLJUCNA = ["prioriteta", "predlagana_enota"];
@@ -233,25 +233,34 @@
       default: return t;
     }
   }
-  function enoteHtml(p, omogoceno) {
-    let top = (p && p.dodatno && p.dodatno.enote) || [];
+  /* vozila za odhod: dispečer sam izbere – prosta najprej, po času prihoda s prometom */
+  function enoteHtml(p) {
+    let vse = (p && p.dodatno && p.dodatno.enote) || [];
     const lok = potrjenZa("lokacija") || odprtiZa("lokacija")[0];
-    if (!top.length && lok) { // zadnja rezerva: ocena v brskalniku
-      top = S.enote.filter((e) => e.stanje !== "okvara").map((e) => ({ enota_id: e.id, tip: e.tip, stanje: e.stanje, ...AID.ocenaEta(e, lok.vrednost.lat, lok.vrednost.lon) }))
-        .sort((a, b) => a.cas_s - b.cas_s).slice(0, 3);
+    if (!vse.length && lok) { // zadnja rezerva: ocena v brskalniku
+      vse = S.enote.filter((e) => !["okvara", "ni_na_voljo"].includes(e.stanje)).map((e) => ({ enota_id: e.id, tip: e.tip, stanje: e.stanje, ...AID.ocenaEta(e, lok.vrednost.lat, lok.vrednost.lon) }));
     }
-    if (!top.length) return "";
-    const izbrana = p && p.vrednost;
-    const najhitrejsa = top.find((x) => x.stanje === "prosto") || top[0];
-    const glava = `<div class="najblizja">Najbližja po prometu: <b>${esc(najhitrejsa.enota_id)}</b> · ${Math.max(1, Math.round(najhitrejsa.cas_s / 60))} min
-      <span class="kakovost ${najhitrejsa.kakovost === "natančno" ? "natancno" : najhitrejsa.kakovost === "ocena" ? "ocena" : ""}">${esc(najhitrejsa.kakovost)}</span>
-      ${S.klic ? '<button class="gumb majhen" data-osvezi-najblizjo>↻ Osveži po prometu</button>' : ""}</div>`;
-    return glava + `<table class="enote-tabela" aria-label="Najhitrejše enote"><tbody>${top.map((x) => {
+    if (!vse.length) return '<p class="pojasnilo">Najprej določite lokacijo – nato se izračunajo časi prihoda vozil.</p>';
+    vse = vse.slice().sort((a, b) => (a.stanje !== "prosto") - (b.stanje !== "prosto") || a.cas_s - b.cas_s);
+    const izbrana = p && POTRJENA.includes(p.stanje) ? p.vrednost : null;
+    const predlog = p && !POTRJENA.includes(p.stanje) ? p.vrednost : null;
+    const najblizja = vse.find((x) => x.stanje === "prosto");
+    const izracunano = p && p.dodatno && p.dodatno.izracunano ? " · " + AID.uraKratko(new Date(p.dodatno.izracunano * 1000)) : "";
+    const glava = `<div class="najblizja">Časi prihoda s prometom${izracunano}
+      ${S.klic ? '<button class="gumb majhen" data-osvezi-najblizjo>↻ Osveži</button>' : ""}</div>`;
+    return glava + `<table class="enote-tabela izbira-vozila" aria-label="Vozila za odhod"><tbody>${vse.map((x) => {
+      const e = S.enote.find((y) => y.id === x.enota_id) || {};
+      const prosto = x.stanje === "prosto";
       const kak = x.kakovost === "natančno" ? "natancno" : x.kakovost === "ocena" ? "ocena" : "";
-      return `<tr class="${x.enota_id === izbrana ? "izbrana" : ""}"><td><b>${esc(x.enota_id)}</b> <span style="color:var(--besedilo-2)">${esc(x.stanje === "prosto" ? x.tip : x.tip + ", na nalogi")}</span></td>
+      const voznik = e.voznik ? (e.voznik.prijavljen ? '<span class="voznik-da" title="Voznik je prijavljen v aplikaciji – nalogo prejme samodejno">● aplikacija</span>'
+        : '<span class="voznik-ne" title="Voznik ni prijavljen – obvestite ga po radiu">○ brez aplikacije</span>') : "";
+      const oznake = [x === najblizja ? '<span class="znacka temna">najbližja prosta</span>' : "", x.enota_id === predlog ? '<span class="znacka">predlog AI</span>' : ""].join(" ");
+      return `<tr class="${x.enota_id === izbrana ? "izbrana" : ""} ${prosto ? "" : "zasedena"}">
+        <td><b>${esc(x.enota_id)}</b> <span class="tip-vozila">${esc(x.tip)}${prosto ? "" : " · na nalogi"}</span><br>${oznake} ${voznik}</td>
         <td class="eta">${Math.max(1, Math.round(x.cas_s / 60))} min</td><td>${(x.razdalja_m / 1000).toFixed(1)} km</td>
         <td><span class="kakovost ${kak}">${esc(x.kakovost)}</span></td>
-        <td>${omogoceno && x.enota_id !== izbrana ? `<button class="gumb majhen" data-izberi-enoto="${esc(x.enota_id)}">Izberi</button>` : ""}</td></tr>`;
+        <td>${x.enota_id === izbrana ? '<span class="znacka temna">izbrano</span>'
+          : `<button class="gumb majhen ${prosto ? "temen" : ""}" data-izberi-enoto="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"}>Izberi</button>`}</td></tr>`;
     }).join("")}</tbody></table>`;
   }
   function razlogHtml(p) {
@@ -280,7 +289,7 @@
         ? `<span class="prvotna">AI: ${esc(fmt(def.polje, potrjen.prvotna_ai_vrednost))}</span>` : "";
       telo = `<div class="vrednost">${esc(fmt(def.polje, potrjen.vrednost))}${prv}</div>${dokaziHtml(potrjen)}
         <div class="potrjeno-info">${potrjen.stanje === "sprejeto" ? "Sprejeto" : potrjen.predlagal === "dispecer" ? "Ročni vnos" : "Spremenjeno"} · ${esc(potrjen.potrdil)} · ${AID.uraZdaj(new Date(potrjen.potrjeno_ob * 1000))}</div>`;
-      if (def.tip === "enota") telo += enoteHtml(potrjen, false);
+      if (def.tip === "enota") telo += enoteHtml(potrjen);
       telo += odprti.map((p) => `<div class="konflikt"><div class="naslovek">⚠ AI zaznal drugačno vrednost · nasprotuje potrjenemu</div>
         <div class="vrednost">${esc(fmt(def.polje, p.vrednost))} ${zaupanjeHtml(p.zaupanje)}</div>${dokaziHtml(p)}
         <div class="k-gumbi"><button class="gumb sprejmi" data-akcija="sprejmi" data-id="${p.id}">Sprejmi novo</button><button class="gumb" data-akcija="zavrni" data-id="${p.id}">Ohrani potrjeno</button></div>${razlogHtml(p)}</div>`).join("");
@@ -294,7 +303,7 @@
       } else {
         telo = `<div class="vrednost">${esc(fmt(def.polje, p.vrednost))}${(p.zaupanje ?? 1) < 0.5 ? ' <span class="znacka negotovo">negotovo</span>' : ""}</div>${dokaziHtml(p)}`;
       }
-      if (def.tip === "enota") telo += enoteHtml(p, true);
+      if (def.tip === "enota") telo += enoteHtml(p);
       gumbi = `<button class="gumb sprejmi" data-akcija="sprejmi" data-id="${p.id}">Sprejmi <kbd>⏎</kbd></button>
         <button class="gumb" data-akcija="uredi">Uredi <kbd>E</kbd></button>
         <button class="gumb zavrni" data-akcija="zavrni" data-id="${p.id}">Zavrni <kbd>Del</kbd></button>`;
@@ -302,7 +311,7 @@
     } else {
       razred += " manjka";
       telo = `<div class="vrednost prazna">manjka</div>`;
-      if (def.tip === "enota") telo += enoteHtml(null, false);
+      if (def.tip === "enota") telo += enoteHtml(null);
       gumbi = `<button class="gumb" data-akcija="uredi">+ Vnesi ročno <kbd>E</kbd></button>`;
     }
     const desno = potrjen ? `<span class="znacka temna">potrjeno</span>` : glavni ? `${zaupanjeHtml(glavni.zaupanje)}<span class="znacka">AI predlog</span>` : `<span class="znacka rdeca-bleda">manjka</span>`;
@@ -395,7 +404,16 @@
     $("sprejmi-vse").textContent = `Sprejmi vse z zaupanjem ≥ 0,8${k.length ? " (" + k.length + ")" : ""}`;
     const m = manjkajoca();
     const el = $("manjka-opozorilo");
-    if (S.klic && S.klic.naloga_id) { el.textContent = "✓ Odobreno – naloga je v predlogu plana."; el.style.color = ""; }
+    if (S.klic && S.klic.naloga_id) {
+      const p = S.posiljanje || {};
+      const e = S.enote.find((x) => x.id === p.enota) || {};
+      const STAT = { prejeto: "voznik je potrdil prejem", na_poti: "na poti", na_prizoriscu: "na kraju dogodka", pacient_nalozen: "pacient naložen",
+        dostavljeno: "dostavljeno", opravljeno: "opravljeno" };
+      el.textContent = p.stanje === "predlog" ? "✓ Odobreno – plan čaka potrditev (do takrat voznik ne prejme naloge)."
+        : p.stanje === "poslano" ? `✓ Poslano ${p.enota || ""}${e.voznik && !e.voznik.prijavljen ? " – voznik nima aplikacije (radio)" : " – čakam potrditev prejema"}`
+        : p.stanje ? `✓ ${p.enota}: ${STAT[p.stanje] || p.stanje}` : "✓ Odobreno.";
+      el.style.color = "";
+    }
     else { el.textContent = m.length ? "Za pošiljanje potrdite: " + m.map((d) => d.oznaka.toLowerCase()).join(", ") : "Obvezna polja so potrjena."; el.style.color = m.length ? "" : "var(--antracit)"; }
     $("odobri").disabled = !S.klic || !!S.klic.naloga_id;
     $("uredi-vse").disabled = !S.klic;
@@ -552,14 +570,41 @@
     if (!ok) return;
     try {
       $("odobri").disabled = true;
+      $("odobri").textContent = "PLANER RAČUNA …";
       const r = await AID.api(`/klic/${S.klic.id}/odobri`, { metoda: "POST" });
       S.klic.naloga_id = r.naloga.id;
+      S.posiljanje = { naloga_id: r.naloga.id, enota: v.predlagana_enota, plan_id: r.plan_predlog && r.plan_predlog.id, stanje: "predlog" };
       $("obrazec").classList.add("poslano");
       izrisiNapredek();
-      AID.obvestilo(`Naloga ${r.naloga.id} ustvarjena`, "Predlog plana je pripravljen – potrdite ga.");
-      if (r.plan_predlog) AID.preklopi("plan");
+      if (r.plan_predlog) await potrdiPlanTukaj(r.plan_predlog, r.naloga);
     } catch (e) { napaka(e); izrisiNapredek(); }
+    $("odobri").textContent = "ODOBRI IN POŠLJI";
   };
+
+  /* Potrditev plana kar v pogledu klica: brez skritega drugega koraka (sicer voznik ne prejme ničesar). */
+  async function potrdiPlanTukaj(plan, naloga) {
+    const korak = Object.entries(plan.koraki_po_enoti).flatMap(([eid, ks]) => ks.map((k) => ({ ...k, eid }))).find((k) => k.naloga_id === naloga.id);
+    const e = S.enote.find((x) => x.id === (korak && korak.eid)) || {};
+    const prihod = korak ? `prihod ob ${AID.uraKratko(new Date(korak.eta * 1000))} (čez ${Math.max(1, Math.round((korak.eta - Date.now() / 1000) / 60))} min)` : "ni dodeljeno";
+    const druge = (plan.primerjava.spremenjene_dodelitve || []).filter((x) => x.naloga_id !== naloga.id);
+    const ok = await AID.modal({
+      naslov: `Pošlji ${korak ? korak.eid : "nalogo"} na ${naloga.prevzem.naslov}?`,
+      html: `<p><b>${esc(korak ? korak.eid : "—")}</b> · ${esc(prihod)}</p>
+        <p>${e.voznik && e.voznik.prijavljen ? "Voznik je prijavljen v aplikaciji: nalogo, pot in navodila prejme takoj, ko potrdite plan."
+          : '<b style="color:var(--rdeca)">Voznik nima prijavljene aplikacije – po potrditvi ga obvestite po radiu.</b>'}</p>
+        ${druge.length ? `<p>Spremembe pri drugih vozilih (${druge.length}):</p><ul>${druge.slice(0, 5).map((x) => `<li>${esc(x.naloga_id)}: ${esc(x.prej || "—")} → ${esc(x.potem || x.opomba || "—")}</li>`).join("")}</ul>` : "<p>Drugi razporedi ostanejo enaki.</p>"}
+        <p class="pojasnilo">${esc(plan.primerjava.razlaga)}</p>`,
+      gumbi: [{ besedilo: "Pokaži v planu", vrednost: "plan" }, { besedilo: "POTRDI PLAN IN POŠLJI", vrednost: "potrdi", razred: "rdec" }],
+    });
+    if (ok === "plan") { AID.preklopi("plan"); return; }
+    if (ok !== "potrdi") { AID.obvestilo("Plan še ni potrjen", "Potrdite ga v pogledu »Plan in karta« – do takrat voznik ne prejme naloge.", true, 7000); return; }
+    try {
+      await AID.api(`/plan/${plan.id}/potrdi`, { metoda: "POST" });
+      S.posiljanje = { ...(S.posiljanje || {}), enota: korak && korak.eid, stanje: "poslano" };
+      izrisiNapredek();
+      AID.obvestilo(`Poslano ${korak ? korak.eid : ""}`, e.voznik && e.voznik.prijavljen ? "Čakam potrditev prejema voznika." : "Obvestite voznika po radiu.");
+    } catch (e2) { napaka(e2); }
+  }
 
   /* ---------- mini karta ---------- */
   let karta = null, mPredlog = null, mPotrjen = null, zadnjaLok = null;
@@ -660,6 +705,10 @@
   AID.na("klic", (k) => { if (S.klic && k.id === S.klic.id) { Object.assign(S.klic, k); izrisiTelefon(); } else AID.api("/cakajoci").then((c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); }).catch(() => {}); });
   AID.na("enote", (e) => { S.enote = e; izrisiVse(); });
   AID.na("ai_stanje", (v) => nastaviAi(v.na_voljo));
+  AID.na("plan_aktiven", (p) => { if (S.posiljanje && S.posiljanje.plan_id === p.id && S.posiljanje.stanje === "predlog") { S.posiljanje.stanje = "poslano"; izrisiNapredek(); } });
+  AID.na("voznik_potrditev", (x) => { if (S.posiljanje && x.enota_id === S.posiljanje.enota) { S.posiljanje.stanje = "prejeto"; izrisiNapredek(); } });
+  AID.na("voznik_stanje", (x) => { if (S.posiljanje && x.naloga_id && x.naloga_id === S.posiljanje.naloga_id) { S.posiljanje.stanje = x.stanje; izrisiNapredek(); } });
+  AID.na("voznik_prijava", () => AID.api("/enote").then((e) => { S.enote = e; izrisiVse(); }).catch(() => {}));
   AID.na("opozorilo", (o) => {
     if (o.vrsta === "ai") nastaviAi(o.na_voljo);
     AID.obvestilo(o.vrsta === "ai" ? "AI poslušalec" : "Opozorilo", o.sporocilo, true, 6000);

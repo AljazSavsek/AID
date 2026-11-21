@@ -79,6 +79,7 @@ def sestavi_model(stanje: dict, zdaj: float) -> Model:
     m.konec = dodaj(lat=0.0, lon=0.0)  # navidezni konec (brez stroška)
 
     v_tovoru = {t["naloga_id"]: e["id"] for e in enote for t in e.get("tovor", [])}
+    razpolozljive = {e["id"] for e in enote}
     for n in stanje["naloge"]:
         if n.get("stanje") in ("opravljena", "preklicana", "prenesena"):
             continue
@@ -90,11 +91,14 @@ def sestavi_model(stanje: dict, zdaj: float) -> Model:
             dodaj(lat=n["dostava"]["lat"], lon=n["dostava"]["lon"], akcija="dostava", pacienti=-p, oprema=-o,
                   okno_do=okno_do, dovoljena_enota=v_tovoru[n["id"]], **skupno)
             continue
+        # vozilo, ki ga je izbral dispečer, je zavezujoče – dokler je razpoložljivo (okvara -> planer izbere drugo)
+        izbrana = n.get("dodeljena_enota") if n.get("dodeljena_enota") in razpolozljive else None
         if n["tip"] == "nujna_voznja" or not n.get("dostava"):
-            dodaj(lat=n["prevzem"]["lat"], lon=n["prevzem"]["lon"], akcija="prihod", okno_od=okno_od, okno_do=okno_do, **skupno)
+            dodaj(lat=n["prevzem"]["lat"], lon=n["prevzem"]["lon"], akcija="prihod", okno_od=okno_od, okno_do=okno_do,
+                  dovoljena_enota=izbrana, **skupno)
             continue
         a = dodaj(lat=n["prevzem"]["lat"], lon=n["prevzem"]["lon"], akcija="prevzem", pacienti=p, oprema=o,
-                  okno_od=okno_od, okno_do=okno_do, **skupno)
+                  okno_od=okno_od, okno_do=okno_do, dovoljena_enota=izbrana, **skupno)
         b = dodaj(lat=n["dostava"]["lat"], lon=n["dostava"]["lon"], akcija="dostava", pacienti=-p, oprema=-o, **skupno)
         m.pari.append((a, b))
     return m
@@ -190,7 +194,7 @@ def resi(model: Model, matrike: dict[str, list[list[float]]], razdalje: dict[str
             dim.SetCumulVarSoftUpperBound(idx, vz.okno_do, UTEZ_ZAMUDE[vz.prioriteta])
         dovoljena = [v for v, e in enumerate(model.enote)
                      if (not vz.dovoljena_enota or e["id"] == vz.dovoljena_enota)
-                     and e["tip"] not in nast.izkljuci_tipe
+                     and (e["tip"] not in nast.izkljuci_tipe or e["id"] == vz.dovoljena_enota)
                      and not (e["tip"] == "helikopter" and vz.prioriteta > nast.heli_max_prioriteta and not vz.dovoljena_enota)]
         if len(dovoljena) < n_voz:
             r.VehicleVar(idx).SetValues([-1] + dovoljena)  # -1 = neaktivno (izpust)

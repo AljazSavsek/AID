@@ -346,7 +346,7 @@ class Center:
             max((p for p in za_lok if p["stanje"] == "predlagano"), key=lambda p: p["zaupanje"] or 0, default=None)
         if not lok:
             return
-        top = await self.eta_enot(lok["vrednost"]["lat"], lok["vrednost"]["lon"])
+        top = await self.eta_enot(lok["vrednost"]["lat"], lok["vrednost"]["lon"], omejitev=12)  # vse: dispečer izbere
         prosti = [t for t in top if t["stanje"] == "prosto"] or top
         if not prosti:
             return
@@ -521,7 +521,8 @@ class Center:
                                       "orientacija": pot.get("orientacija")}, int(pot["prioriteta"]),
                      okno_od=time.time(), okno_do=time.time() + {1: 10, 2: 15, 3: 25, 4: 45, 5: 60}[int(pot["prioriteta"])] * 60,
                      opis=opis)
-        n.update(klic_id=klic_id, zelena_enota=pot["predlagana_enota"], podatki_klica=pot)
+        # vozilo je izbral dispečer -> zavezujoče za planer (ODLOCITVE #67)
+        n.update(klic_id=klic_id, zelena_enota=pot["predlagana_enota"], dodeljena_enota=pot["predlagana_enota"], podatki_klica=pot)
         d = M.dogodek("nujna_naloga", {"naloga": n}, "klic", "sprejeto")
         k["naloga_id"] = n["id"]
         self.db.shrani("klic", k)
