@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AID · Regijski center</title>
+  <link rel="icon" href="img/aid-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/aid.css">
+  <link rel="stylesheet" href="css/center.css">
+</head>
+<body>
+<header class="glava">
+  <a href="index.html" aria-label="AID – domov"><img class="logo" src="img/aid-logo.svg" alt="AID"></a>
+  <div class="naslov-centra"><b>Regijski dispečerski center</b>Ljubljana · NMP</div>
+  <div class="desno">
+    <button class="gumb majhen" id="gumb-revizija" title="Revizijska sled">Revizijska sled</button>
+    <span class="povezava" data-povezava>Povezava OK</span>
+    <span class="uporabnik"><span class="avatar">MN</span><span>Dispečer M. Novak</span></span>
+    <span class="ura" data-ura>--:--:--</span>
+  </div>
+</header>
+
+<main class="center">
+  <!-- LEVO: čakalna vrsta + telefon -->
+  <section class="stolpec levo" aria-label="Klici">
+    <div class="plosca">
+      <div class="plosca-glava">
+        <h2>Čakajoči klici</h2>
+        <span class="znacka rdeca" id="st-cakajocih">3</span>
+      </div>
+      <ul class="vrsta-klicev" id="vrsta-klicev"></ul>
+    </div>
+
+    <div class="plosca telefon" id="telefon">
+      <div class="plosca-glava"><h2>Telefon</h2><span class="znacka" id="tel-stanje">Prosto</span></div>
+      <div class="tel-telo">
+        <div class="tel-stevilka" id="tel-stevilka">—</div>
+        <div class="tel-omrezje" id="tel-omrezje">Ni aktivnega klica</div>
+        <div class="tel-cas" id="tel-cas">00:00</div>
+        <div class="valovanje" id="valovanje" aria-hidden="true"></div>
+        <div class="tel-gumbi">
+          <button class="gumb" id="tel-utisaj" disabled>Utišaj</button>
+          <button class="gumb" id="tel-zadrzi" disabled>Zadrži</button>
+          <button class="gumb" id="tel-prevezi" disabled>Preveži</button>
+        </div>
+        <button class="gumb rdec velik tel-glavni" id="tel-glavni">SPREJMI KLIC</button>
+      </div>
+    </div>
+
+    <div class="plosca sistem">
+      <div class="plosca-glava"><h2>Stanje sistema</h2></div>
+      <ul class="stanje-sistema">
+        <li><span>Prepis govora</span><span class="pika ok" id="st-prepis">v živo</span></li>
+        <li><span>AI poslušalec</span><span class="pika ok" id="st-ai">aktiven</span></li>
+        <li><span>Geokodiranje</span><span class="pika ok">na voljo</span></li>
+        <li><span>Časi prihoda</span><span class="pika ok">natančno</span></li>
+      </ul>
+      <details class="demo-nastavitve">
+        <summary>Demo: simuliraj izpad</summary>
+        <label><input type="checkbox" id="izpad-ai"> AI poslušalec ni na voljo</label>
+        <label><input type="checkbox" id="izpad-prepis"> Prepis ni na voljo</label>
+        <label>Hitrost klica
+          <select id="hitrost"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select>
+        </label>
+      </details>
+    </div>
+  </section>
+
+  <!-- SREDINA: prepis v živo -->
+  <section class="stolpec sredina" aria-label="Prepis klica">
+    <div class="plosca prepis-plosca">
+      <div class="plosca-glava">
+        <h2>AI transkripcija v živo</h2>
+        <span class="v-zivo skrito" id="v-zivo">V ŽIVO</span>
+        <span class="ai-analizira skrito" id="ai-analizira"><span class="vrtavka"></span>AI analizira …</span>
+        <span class="legenda"><mark>označeno</mark> = citat, ki podpira predlog</span>
+      </div>
+      <div class="prepis" id="prepis" aria-live="polite">
+        <div class="prazno" id="prepis-prazno">
+          <img src="img/aid-logo.svg" alt="" width="120">
+          <p>Ko sprejmete klic, se tu sproti izpisuje prepis pogovora.<br>AI poslušalec iz njega pripravi predloge, <b>odločite vi</b>.</p>
+        </div>
+      </div>
+      <form class="rocni-zapis" id="rocni-zapis" autocomplete="off">
+        <label for="rocni-vnos" class="vizualno-skrito">Ročni zapis</label>
+        <select id="rocni-govorec" aria-label="Govorec"><option value="klicatelj">Klicatelj</option><option value="dispecer">Dispečer</option></select>
+        <input id="rocni-vnos" placeholder="Ročni zapis – če prepis odpove, tipkajte tukaj; AI dela iz zapisanega">
+        <button class="gumb temen" type="submit">Dodaj</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- DESNO: predlagani dispečerski obrazec -->
+  <section class="stolpec desno" aria-label="Predlagani dispečerski obrazec">
+    <div class="plosca obrazec">
+      <div class="plosca-glava obrazec-glava">
+        <div>
+          <h2>Predlagani dispečerski obrazec <span class="aid-oznaka">AID</span></h2>
+          <p class="pojasnilo">AI predlaga · <b>odločitev je vaša</b>. Nepotrjeni podatki se ne pošljejo.</p>
+        </div>
+      </div>
+      <div class="napredek" id="napredek">
+        <div class="napredek-vrstica"><span id="napredek-besedilo">0 od 11 polj potrjenih</span><button class="gumb majhen" id="sprejmi-vse" disabled>Sprejmi vse z zaupanjem ≥ 0,8</button></div>
+        <div class="napredek-trak"><span id="napredek-trak"></span></div>
+      </div>
+      <div class="obrazec-telo" id="obrazec-telo">
+        <div class="vprasanja skrito" id="vprasanja">
+          <h3>Vprašajte klicatelja <span class="znacka">namig AI</span></h3>
+          <ul id="vprasanja-seznam"></ul>
+        </div>
+        <div class="mini-karta-ovoj">
+          <div id="mini-karta" class="mini-karta"></div>
+          <div class="mini-karta-namig">Klik na karto = ročna lokacija</div>
+        </div>
+        <div id="kartice"></div>
+      </div>
+      <div class="obrazec-noga">
+        <div class="manjka-opozorilo" id="manjka-opozorilo"></div>
+        <div class="noga-gumbi">
+          <button class="gumb rdec-obroba velik" id="uredi-vse">UREDI PODATKE</button>
+          <button class="gumb rdec velik" id="odobri">ODOBRI IN POŠLJI</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<aside class="revizija-predal" id="revizija-predal" aria-label="Revizijska sled" hidden>
+  <div class="plosca-glava"><h2>Revizijska sled</h2><button class="gumb majhen" id="revizija-zapri">Zapri</button></div>
+  <div class="revizija-telo"><table><thead><tr><th>Čas</th><th>Uporabnik</th><th>Akcija</th><th>Polje</th><th>Staro → novo</th></tr></thead><tbody id="revizija-tabela"></tbody></table></div>
+</aside>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/skupno.js"></script>
+<script src="js/demo_klic.js"></script>
+<script src="js/center.js"></script>
+</body>
+</html>
