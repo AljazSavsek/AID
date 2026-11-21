@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from dnevnik.shramba import Shramba
+from karta.ploscice import NiNaVoljo, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
 from zajem.simulator import nalozi_klic, predvajaj
 
@@ -265,6 +266,25 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         c = C()
         return {"usmerjanje": c.usmerjanje.zdravje(), "poslusalec_zadnji_vir": c.poslusalec.zadnji_vir,
                 "ai_na_voljo": c.ai_na_voljo, "ws_narocniki": len(c.objava.narocniki)}
+
+    # ---------- karta (posrednik ploščic; ključ ostane na strežniku) ----------
+    ploscice = Ploscice()
+    app.state.ploscice = ploscice
+
+    @app.get("/ploscice/stanje")
+    async def ploscice_stanje():
+        na = ploscice.na_voljo()
+        return {"karta": na, "promet": na,
+                "atribucija": os.environ.get("AID_KARTA_ATRIBUCIJA", "Podlaga karte in promet: zunanji vir")}
+
+    @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")
+    async def ploscica(sloj: str, z: int, x: int, y: int):
+        try:
+            vsebina = await ploscice.ploscica(sloj, z, x, y)
+        except NiNaVoljo:
+            raise HTTPException(404, "ploščica ni na voljo")
+        return Response(vsebina, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=" + ("120" if sloj in ("promet", "nesrece") else "86400")})
 
     # ---------- demo ----------
     @app.post("/demo/klic")

@@ -82,3 +82,4 @@
 }
 .spremembe .opis-naloge { color: var(--besedilo-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spremembe li > span:last-child { margin-left: auto; white-space: nowrap; }
+.stikalo-promet { background: #fff; padding: 6px 10px; border-radius: 8px; box-shadow: var(--senca); font-size: 13px; font-weight: 600; display: flex; gap: 6px; align-items: center; cursor: pointer; }

@@ -554,7 +554,7 @@
   function zacniKarto() {
     if (!window.L) { $("mini-karta").innerHTML = '<div style="padding:12px;font-size:13px;color:var(--besedilo-2)">Karta ni na voljo – vpišite koordinate ročno.</div>'; return; }
     karta = L.map("mini-karta", { zoomControl: false }).setView([46.0569, 14.5058], 12);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+    AID.podlagaKarte(karta);
     karta.on("click", async (e) => {
       if (!S.klic) return;
       try { await shraniVrednost("lokacija", { lat: +e.latlng.lat.toFixed(6), lon: +e.latlng.lng.toFixed(6) }); izrisiVse.prisili = true; izrisiVse("lokacija"); }

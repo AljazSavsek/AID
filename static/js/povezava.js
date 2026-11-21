@@ -115,3 +115,35 @@
     AID.api("/stanje?od=999999999").then((r) => { seq = r.seq; }).catch(() => {}).finally(poveziWs);
   });
 })();
+
+/* ---------- podlaga karte: strežniški posrednik → brezplačna rezerva ---------- */
+(function () {
+  "use strict";
+  const AID = window.AID;
+  let stanje = null;
+  const stanjePromise = () => (stanje = stanje || AID.api("/ploscice/stanje").catch(() => ({ karta: false, promet: false })));
+
+  function rezerva(karta) {
+    return L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+  }
+
+  /* Doda podlago na karto. Če posrednik ne odgovarja (več napak zapored), preklopi na rezervo. */
+  AID.podlagaKarte = async function (karta, { promet = false } = {}) {
+    const st = await stanjePromise();
+    const izid = { promet: null };
+    if (!st.karta) { rezerva(karta); return izid; }
+    const sloj = L.tileLayer("/ploscice/karta/{z}/{x}/{y}.png", { maxZoom: 19, attribution: AID.esc(st.atribucija || "") }).addTo(karta);
+    let napake = 0, uspehi = 0;
+    sloj.on("tileload", () => { uspehi++; napake = 0; });
+    sloj.on("tileerror", () => {
+      if (++napake >= 4 && karta.hasLayer(sloj)) { karta.removeLayer(sloj); rezerva(karta); if (izid.promet) karta.removeLayer(izid.promet); }
+    });
+    if (promet && st.promet) {
+      izid.promet = L.layerGroup([
+        L.tileLayer("/ploscice/promet/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.85 }),
+        L.tileLayer("/ploscice/nesrece/{z}/{x}/{y}.png", { maxZoom: 19 }),
+      ]);
+    }
+    return izid;
+  };
+})();
