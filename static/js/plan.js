@@ -38,10 +38,36 @@
     });
     ["centri", "naloge", "aktiven", "predlog", "enote"].forEach((k) => (sloji[k] = L.layerGroup().addTo(karta)));
   }
-  const ikonaEnote = (e) => L.divIcon({
-    className: "", iconSize: [34, 22], iconAnchor: [17, 11],
-    html: `<div style="background:${e.stanje === "okvara" ? "#8A1525" : "#1D2228"};color:#fff;font:700 10.5px Inter,sans-serif;border-radius:5px;padding:3px 4px;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);white-space:nowrap">${esc(e.id)}</div>`,
-  });
+  /* ---------- živi položaj in signal (GPS z naprave voznika) ---------- */
+  const SIGNAL = { v_zivo: "GPS", zakasnjeno: "GPS zakasnjen", ni_signala: "ni signala", brez_gps: "brez GPS", neznano: "neznano" };
+  const RANG = { v_zivo: 0, zakasnjeno: 1, ni_signala: 2, brez_gps: 3, neznano: 4 };
+  function starostBesedilo(s) {
+    if (s == null) return "";
+    s = Math.max(0, s);
+    return s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
+  }
+  /* Signal se računa tudi lokalno iz starosti položaja: star položaj ni nikoli prikazan kot živ,
+   * tudi če obvestilo strežnika zamudi. Brez povezave s strežnikom je stanje »neznano«. */
+  function signalEnote(e) {
+    const p = e.polozaj;
+    if (!p || p.vir !== "gps" || p.ts == null) return { signal: "brez_gps", starost: null };
+    const starost = AID.streznikZdaj() - p.ts;
+    let lokalno = starost >= p.prag_brez_s ? "ni_signala" : starost >= p.prag_zakasnjeno_s ? "zakasnjeno" : "v_zivo";
+    if (RANG[p.signal] > RANG[lokalno]) lokalno = p.signal;
+    if (AID.stanjePovezave === "brez") lokalno = "neznano";
+    return { signal: lokalno, starost };
+  }
+  const opisSignala = (e) => { const s = signalEnote(e); return SIGNAL[s.signal] + (s.starost != null ? " · " + starostBesedilo(s.starost) : ""); };
+
+  const ikonaEnote = (e) => {
+    const s = signalEnote(e).signal;
+    const zastarel = s === "ni_signala" || s === "neznano";
+    return L.divIcon({
+      className: "", iconSize: [34, 22], iconAnchor: [17, 11],
+      html: `<div data-signal="${s}" style="background:${e.stanje === "okvara" ? "#8A1525" : "#1D2228"};color:#fff;font:700 10.5px Inter,sans-serif;border-radius:5px;padding:3px 4px;text-align:center;border:2px ${zastarel ? "dashed" : "solid"} #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);white-space:nowrap;opacity:${zastarel ? 0.5 : 1}">${esc(e.id)}${zastarel ? " ?" : ""}</div>`,
+    });
+  };
+  const markerji = {};
   const ikonaNaloge = (n) => L.divIcon({
     className: "", iconSize: [26, 26], iconAnchor: [13, 13],
     html: `<div style="width:26px;height:26px;border-radius:50%;background:${n.prioriteta <= 2 ? "#8A1525" : n.prioriteta === 3 ? "#5A6270" : "#8A919C"};color:#fff;font:800 11px Inter,sans-serif;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)">P${n.prioriteta}</div>`,
@@ -55,7 +81,10 @@
     P.naloge.filter((n) => n.stanje === "odprta").forEach((n) => {
       L.marker([n.prevzem.lat, n.prevzem.lon], { icon: ikonaNaloge(n) }).bindTooltip(`${esc(n.id)} · ${esc(n.opis || n.tip)}<br>${esc(n.prevzem.naslov || "")}`).addTo(sloji.naloge);
     });
-    P.enote.forEach((e) => L.marker([e.lat, e.lon], { icon: ikonaEnote(e), zIndexOffset: 1000 }).bindTooltip(`${esc(e.ime)} · ${STANJE[e.stanje] || e.stanje}`).addTo(sloji.enote));
+    P.enote.forEach((e) => {
+      markerji[e.id] = L.marker([e.lat, e.lon], { icon: ikonaEnote(e), zIndexOffset: 1000 })
+        .bindTooltip(() => `${esc(e.ime)} · ${STANJE[e.stanje] || e.stanje}<br>${esc(opisSignala(P.enote.find((x) => x.id === e.id) || e))}`).addTo(sloji.enote);
+    });
     const poti = (plan, sloj, slog) => {
       if (!plan) return;
       Object.entries(plan.koraki_po_enoti).forEach(([eid, ks]) => {
@@ -78,8 +107,10 @@
     const zdaj = Date.now() / 1000;
     $("seznam-enot").innerHTML = P.enote.map((e) => {
       const zamik = (e.na_voljo_od || 0) > zdaj ? `<span class="st-enote zamik">čez ${minut(e.na_voljo_od - zdaj)} min</span>` : "";
+      const sig = signalEnote(e);
       return `<li data-enota="${esc(e.id)}"><span class="ime">${esc(e.id)}</span>${zamik || `<span class="st-enote ${e.stanje}">${STANJE[e.stanje] || e.stanje}</span>`}
-        <span class="tip">${TIP[e.tip] || e.tip}${e.tovor && e.tovor.length ? " · tovor: " + e.tovor.map((t) => esc(t.naloga_id)).join(", ") : ""}</span></li>`;
+        <span class="tip">${TIP[e.tip] || e.tip}${e.tovor && e.tovor.length ? " · tovor: " + e.tovor.map((t) => esc(t.naloga_id)).join(", ") : ""}</span>
+        <span class="st-signal ${sig.signal}" data-signal-enote="${esc(e.id)}">${esc(opisSignala(e))}</span></li>`;
     }).join("");
   }
   $("seznam-enot").onclick = (e) => {
@@ -243,6 +274,33 @@
   AID.na("plan_aktiven", (p) => { P.aktiven = p; if (P.predlog && (P.predlog.id === p.id || P.alternative.some((a) => a.id === p.id))) nastaviPredlog(null); else izrisiVse(); });
   AID.na("plan_zavrnjen", (p) => { if (P.predlog && P.predlog.id === p.id) nastaviPredlog(null); });
   AID.na("enote", (e) => { P.enote = e; izrisiVse(); });
+
+  /* premik enote: marker se premakne brez ponovnega izrisa celotne karte */
+  function premakni(m) {
+    const e = P.enote.find((x) => x.id === m.enota_id);
+    if (!e) return;
+    const { enota_id, lat, lon, ...polozaj } = m;
+    e.lat = lat; e.lon = lon; e.polozaj = polozaj;
+    const mk = markerji[enota_id];
+    if (mk) { mk.setLatLng([lat, lon]); mk.setIcon(ikonaEnote(e)); }
+  }
+  AID.na("enota_premik", (m) => { premakni(m); osveziSignale(); });
+  AID.na("polozaji", (seznam) => { seznam.forEach(premakni); osveziSignale(); });
+  AID.na("enota_signal", (s) => {
+    const e = P.enote.find((x) => x.id === s.enota_id);
+    if (e && e.polozaj) { e.polozaj.signal = s.signal; osveziSignale(); }
+  });
+  /* starost položaja teče vsako sekundo (lokalno, v času strežnika) */
+  function osveziSignale() {
+    P.enote.forEach((e) => {
+      const el = document.querySelector(`[data-signal-enote="${CSS.escape(e.id)}"]`);
+      if (el) { el.textContent = opisSignala(e); el.className = "st-signal " + signalEnote(e).signal; }
+      const mk = markerji[e.id];
+      const s = signalEnote(e).signal;
+      if (mk && mk._signal !== s) { mk._signal = s; mk.setIcon(ikonaEnote(e)); }
+    });
+  }
+  setInterval(osveziSignale, 1000);
   AID.na("dogodek", () => AID.api("/naloge").then((n) => { P.naloge = n; izrisiVse(); }).catch(() => {}));
   AID.na("pogled", (ime) => { if (ime === "plan") { zacniKarto(); setTimeout(() => { karta && karta.invalidateSize(); izrisiVse(); }, 50); } });
   setInterval(() => { if (!$("pogled-plan").classList.contains("skrito")) { izrisiEnote(); izrisiCasovnico(); } }, 30000);
