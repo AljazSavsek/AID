@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8A1525">
+  <title>AID · Opozorilo voznikom</title>
+  <link rel="icon" href="img/aid-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/aid.css">
+  <style>
+    body.javnost { background: #fff; overflow: hidden; }
+    .j-glava { position: fixed; top: 0; left: 0; right: 0; z-index: 900; display: flex; align-items: center; gap: 12px; padding: 12px 16px; pointer-events: none; }
+    .j-glava img { height: 32px; background: rgba(255,255,255,.9); border-radius: 8px; padding: 4px 6px; }
+    .j-glava .stanje-j { margin-left: auto; pointer-events: auto; background: rgba(255,255,255,.95); border: 1px solid var(--rob); border-radius: 99px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--besedilo-2); }
+    #karta-j { position: fixed; inset: 0; background: var(--podlaga-2); }
+    .pas { position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; background: var(--rdeca); color: #fff; padding: 22px 20px calc(22px + env(safe-area-inset-bottom));
+      text-align: center; box-shadow: 0 -10px 40px rgba(138,21,37,.45); transform: translateY(110%); transition: transform .35s ease; }
+    .pas.aktiven { transform: none; }
+    .pas h1 { margin: 0; font-size: clamp(24px, 5vw, 48px); font-weight: 900; letter-spacing: .5px; line-height: 1.1; }
+    .pas p { margin: 8px 0 0; font-size: clamp(18px, 3vw, 28px); font-weight: 800; }
+    .pas .razdalja { display: inline-block; margin-top: 12px; background: #fff; color: var(--rdeca); border-radius: 99px; padding: 6px 16px; font-weight: 800; font-size: 18px; }
+    .mirno { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 900; background: #fff; border: 1px solid var(--rob); border-radius: 14px; padding: 14px 16px; box-shadow: var(--senca); font-size: 15px; color: var(--besedilo-2); text-align: center; }
+    .mirno b { color: var(--besedilo); }
+    .resilec { width: 44px; height: 44px; border-radius: 50%; background: var(--rdeca); border: 3px solid #fff; display: grid; place-items: center; color: #fff; font: 900 20px Inter, sans-serif;
+      box-shadow: 0 0 0 0 rgba(138,21,37,.8); animation: utrip-j 1s infinite; }
+    @keyframes utrip-j { 0% { box-shadow: 0 0 0 0 rgba(138,21,37,.8); } 70% { box-shadow: 0 0 0 26px rgba(138,21,37,0); } 100% { box-shadow: 0 0 0 0 rgba(138,21,37,0); } }
+    .jaz { width: 20px; height: 20px; border-radius: 50%; background: #1D2228; border: 4px solid #fff; box-shadow: 0 0 0 2px #1D2228; }
+    .pasovi { display: inline-flex; gap: 6px; margin-top: 10px; align-items: flex-end; }
+    .pasovi i { width: 10px; height: 34px; background: #fff; border-radius: 3px; }
+    .pasovi i.sredina { background: transparent; border-left: 3px dashed #fff; width: 22px; height: 34px; border-radius: 0; }
+    @media (prefers-reduced-motion: reduce) { .resilec { animation: none; } }
+  </style>
+</head>
+<body class="javnost">
+<div class="j-glava"><img src="img/aid-logo.svg" alt="AID"><span class="stanje-j" id="stanje-j">Določam vašo lokacijo …</span></div>
+<div id="karta-j" aria-label="Karta okolice"></div>
+<section class="pas" id="pas" role="alert" aria-live="assertive">
+  <h1>POZOR: REŠEVALNO VOZILO V BLIŽINI</h1>
+  <p>PRIPRAVITE REŠEVALNI PAS</p>
+  <div class="pasovi" aria-hidden="true"><i></i><i class="sredina"></i><i></i></div><br>
+  <span class="razdalja" id="razdalja">—</span>
+</section>
+<div class="mirno" id="mirno"><b>V bližini ni reševalnih vozil na nujni vožnji.</b><br>Opozorilo se prikaže samodejno. Klik na karto = demo lokacija.</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/skupno.js"></script>
+<script>
+/* AID – opozorilo za javnost: reševalno vozilo na nujni vožnji v bližini.
+ * Strežnik vrne le vozila na nujni vožnji v radiju 3 km, brez oznake vozila in podatkov o nalogi/pacientu. */
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const iz = new URLSearchParams(location.search);
+  let jaz = iz.get("lat") ? [Number(iz.get("lat")), Number(iz.get("lon"))] : null, mJaz = null;
+  const karta = L.map("karta-j", { zoomControl: false }).setView(jaz || [46.0569, 14.5058], 15);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+  const vozila = L.layerGroup().addTo(karta);
+  const ikona = (smer) => L.divIcon({ className: "", iconSize: [44, 44], iconAnchor: [22, 22],
+    html: `<div class="resilec" style="transform: rotate(${smer || 0}deg)">${smer != null ? "▲" : "+"}</div>` });
+
+  function nastaviJaz(p, vir) {
+    jaz = p;
+    if (!mJaz) mJaz = L.marker(p, { icon: L.divIcon({ className: "", iconSize: [20, 20], iconAnchor: [10, 10], html: '<div class="jaz"></div>' }) }).addTo(karta);
+    mJaz.setLatLng(p);
+    karta.setView(p, Math.max(karta.getZoom(), 15));
+    $("stanje-j").textContent = vir;
+    osvezi();
+  }
+  karta.on("click", (e) => nastaviJaz([e.latlng.lat, e.latlng.lng], "Demo lokacija"));
+  if (jaz) nastaviJaz(jaz, "Demo lokacija");
+  else if (navigator.geolocation) {
+    navigator.geolocation.watchPosition((p) => nastaviJaz([p.coords.latitude, p.coords.longitude], "Vaša lokacija"),
+      () => { $("stanje-j").textContent = "Lokacija ni na voljo – kliknite na karto"; }, { enableHighAccuracy: true, maximumAge: 5000 });
+  } else $("stanje-j").textContent = "Kliknite na karto za demo lokacijo";
+
+  let opozorjen = false;
+  async function osvezi() {
+    if (!jaz) return;
+    let r;
+    try { r = await (await fetch(`/javnost/blizina?lat=${jaz[0]}&lon=${jaz[1]}`)).json(); }
+    catch (_) { $("stanje-j").textContent = "Brez povezave"; return; }
+    vozila.clearLayers();
+    const v = (r.vozila || []);
+    v.forEach((x) => L.marker([x.lat, x.lon], { icon: ikona(x.smer), zIndexOffset: 1000 }).addTo(vozila));
+    const blizu = v.find((x) => x.priblizuje_se && x.razdalja_m <= 1500) || v.find((x) => x.razdalja_m <= 300);
+    $("pas").classList.toggle("aktiven", !!blizu);
+    $("mirno").classList.toggle("skrito", !!blizu);
+    if (blizu) {
+      $("razdalja").textContent = `${blizu.razdalja_m >= 1000 ? (blizu.razdalja_m / 1000).toFixed(1).replace(".", ",") + " km" : blizu.razdalja_m + " m"} · ${blizu.priblizuje_se ? "se približuje" : "v bližini"}`;
+      if (!opozorjen && navigator.vibrate) navigator.vibrate([300, 150, 300]);
+      opozorjen = true;
+      const b = L.latLngBounds([jaz, [blizu.lat, blizu.lon]]);
+      karta.fitBounds(b, { padding: [60, 60], maxZoom: 17 });
+    } else opozorjen = false;
+  }
+  setInterval(osvezi, 2000);
+})();
+</script>
+</body>
+</html>

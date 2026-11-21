@@ -208,6 +208,11 @@ class Center:
                 self._ai_cakajoci.discard(klic_id)
                 st = self.stanje()
                 izhod = await self.poslusalec.obdelaj(self.segmenti(klic_id), self.predlogi(klic_id), st["enote"], st["centri"])
+                if self.poslusalec.rezerva != getattr(self, "_ai_rezerva", False):
+                    self._ai_rezerva = self.poslusalec.rezerva
+                    self.objava.objavi("opozorilo", {"vrsta": "ai_rezerva", "na_voljo": True,
+                                                     "sporocilo": "AI v oblaku ni na voljo – predloge pripravlja rezerva (manj natančno)."
+                                                     if self.poslusalec.rezerva else "AI v oblaku spet deluje."})
                 na_voljo = izhod is not None
                 if na_voljo != self.ai_na_voljo:
                     self.ai_na_voljo = na_voljo

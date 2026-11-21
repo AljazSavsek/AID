@@ -1,5 +1,4 @@
 """Najbližja enota po prometu in pot po cestah."""
-import json
 
 import pytest
 from fastapi.testclient import TestClient

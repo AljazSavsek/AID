@@ -188,6 +188,11 @@ class Avtentikacija:
         self.db.izvedi("DELETE FROM voznik_seja WHERE potece < ? OR (preklicano IS NOT NULL AND preklicano < ?)", (meja, meja))
         return vr
 
+    def z_napravo(self, okno_s: float = 12 * 3600) -> set[str]:
+        """Enote, ki so v zadnji izmeni (privzeto 12 h) imele prijavljeno napravo."""
+        meja = self.ura() - okno_s
+        return {r["enota_id"] for r in self.db.izvedi("SELECT DISTINCT enota_id FROM voznik_seja WHERE ustvarjeno > ?", (meja,))}
+
     def prijavljena(self) -> set[str]:
         zdaj = self.ura()
         return {r["enota_id"] for r in self.db.izvedi(

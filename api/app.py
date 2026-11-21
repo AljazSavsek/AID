@@ -29,6 +29,9 @@ from voznik.naloge import NapakaStanja
 from voznik.vmesnik import ustvari_usmerjevalnik
 from zajem.simulator import nalozi_klic, predvajaj
 
+from voznik.omejitve import Omejevalnik
+
+from .dispecer import PISKOTEK, TRAJANJE_S, Dispecerji, NapakaPrijaveDispecerja, Varovalo
 from .storitev import Center, NapakaStoritve
 
 KOREN = Path(__file__).resolve().parent.parent
@@ -115,19 +118,66 @@ class DemoKlic(BaseModel):
     hitrost: float = 1.0
 
 
-def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
-    from urllib.parse import unquote
-    return (unquote(x_uporabnik) if x_uporabnik else "dispečer").strip()[:60]
+class PrijavaDispecerja(BaseModel):
+    ime: str = Field(min_length=1, max_length=60)
+    geslo: str = Field(min_length=1, max_length=200)
+
+
+def uporabnik(request: Request) -> str:
+    """Ime dispečerja iz prijavljene seje (pravilo 2.6) – nikoli iz glave odjemalca."""
+    ime = getattr(request.state, "dispecer", None)
+    if not ime:
+        raise HTTPException(401, "prijava dispečerja je potrebna")
+    return ime
+
+
+def je_skrbnik(zeton: str | None) -> bool:
+    pravi = os.environ.get("AID_SKRBNIK_ZETON")
+    return bool(pravi and zeton and hmac.compare_digest(pravi, zeton))
 
 
 def preveri_skrbnika(x_skrbnik_zeton: str | None = Header(default=None)) -> None:
-    zeton = os.environ.get("AID_SKRBNIK_ZETON")
-    if not zeton or not x_skrbnik_zeton or not hmac.compare_digest(zeton, x_skrbnik_zeton):
+    if not je_skrbnik(x_skrbnik_zeton):
         raise HTTPException(403, "samo za skrbnika")
 
 
-def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
-    stanje: dict = {"center": center}
+# območje storitve (Slovenija z robom): poti in ploščice izven njega ne gredo k zunanjim ponudnikom
+OBMOCJE = (45.2, 13.2, 47.0, 16.8)  # jug, zahod, sever, vzhod
+
+
+def preveri_obmocje(lat: float, lon: float) -> None:
+    j, z, s_, v = OBMOCJE
+    if not (j <= lat <= s_ and z <= lon <= v):
+        raise HTTPException(422, "točka je izven območja storitve")
+
+
+def ploscica_v_obmocju(z: int, x: int, y: int) -> bool:
+    import math
+    if not (5 <= z <= 19 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        return False
+    n = 2 ** z
+    def lat(yy):  # severni rob ploščice yy
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * yy / n))))
+    zahod, vzhod = x / n * 360 - 180, (x + 1) / n * 360 - 180
+    sever, jug = lat(y), lat(y + 1)
+    j, zz, s_, v = OBMOCJE
+    return vzhod >= zz and zahod <= v and sever >= j and jug <= s_
+
+
+# omejitve zahtevkov (na dispečerja/napravo/IP), da ne gre kvota zunanjih ponudnikov
+OMEJITVE = {"ploscice": 900, "poti": 30, "pot": 120, "eta": 120, "prijava": 10, "javnost": 60}
+
+
+def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: Dispecerji | None = None) -> FastAPI:
+    stanje: dict = {"center": center,
+                    "dispecerji": dispecerji or Dispecerji.iz_okolja(KOREN / "demo" / "scenarij.json")}
+    omejevalniki = {k: Omejevalnik(v) for k, v in OMEJITVE.items()}
+
+    def omeji(vrsta: str, request: Request) -> None:
+        kdo = getattr(request.state, "dispecer", None) or (request.headers.get("authorization") or "")[-24:] \
+            or (request.client.host if request.client else "?")
+        if not omejevalniki[vrsta].dovoli(kdo):
+            raise HTTPException(429, "preveč zahtevkov – počakajte trenutek")
 
     @contextlib.asynccontextmanager
     async def zivljenje(_app):
@@ -136,8 +186,79 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         for t in stanje.get("naloge", []):
             t.cancel()
 
-    app = FastAPI(title="AID – regijski dispečerski center", docs_url="/interno/docs", redoc_url=None,
-                  openapi_url="/interno/openapi.json", lifespan=zivljenje)
+    docs = os.environ.get("AID_DOCS") == "1"  # dokumentacija API le, če jo skrbnik izrecno vklopi
+    app = FastAPI(title="AID – regijski dispečerski center", docs_url="/interno/docs" if docs else None, redoc_url=None,
+                  openapi_url="/interno/openapi.json" if docs else None, lifespan=zivljenje)
+    app.add_middleware(Varovalo, dispecerji=lambda: stanje["dispecerji"],
+                       preveri_voznika=lambda t: stanje["center"].avtentikacija.preveri_dostop(t), je_skrbnik=je_skrbnik)
+
+    # ---------- prijava dispečerja ----------
+    @app.post("/dispecer/prijava")
+    async def prijava_dispecerja(v: PrijavaDispecerja, request: Request):
+        omeji("prijava", request)
+        d: Dispecerji = stanje["dispecerji"]
+        try:
+            zeton, ime = d.prijava(v.ime, v.geslo)
+        except NapakaPrijaveDispecerja as e:
+            C().db.revizija(f"neznan ({request.client.host if request.client else '?'})", "Dispecer", v.ime[:60],
+                            "prijava_zavrnjena", None, None)
+            raise HTTPException(e.koda, str(e)) from e
+        C().db.revizija(ime, "Dispecer", ime, "prijava", None, None)
+        r = JSONResponse({"ime": ime})
+        r.set_cookie(PISKOTEK, zeton, max_age=TRAJANJE_S, httponly=True, samesite="strict",
+                     secure=request.url.scheme == "https", path="/")
+        return r
+
+    # ---------- javnost: opozorilo »reševalno vozilo v bližini« ----------
+    @app.get("/javnost/blizina")
+    async def blizina(lat: float, lon: float, request: Request):
+        """Samo vozila NA NUJNI VOŽNJI v radiju 3 km; brez oznake vozila, naloge ali podatkov o pacientu.
+        Položaj zaokrožen na ~10 m. Starih položajev (> 60 s) ne kažemo."""
+        omeji("javnost", request)
+        preveri_obmocje(lat, lon)
+        from usmerjanje.ponudniki import zracna_razdalja_m
+        c, zdaj, out = C(), time.time(), []
+        for e in c.enote():
+            k = c.naloge_voznikov.trenutni(e["id"])
+            if not k or c.naloge_voznikov.faza(e["id"], k) != "na_poti" or not (k.get("nujna") or (k.get("prioriteta") or 5) <= 2):
+                continue
+            pol = e.get("polozaj") or {}
+            if pol.get("vir") != "gps" or not pol.get("ts") or zdaj - pol["ts"] > 60:
+                continue
+            d = zracna_razdalja_m((lat, lon), (e["lat"], e["lon"]))
+            if d > 3000:
+                continue
+            smer = pol.get("smer")
+            proti = None
+            if smer is not None:
+                import math
+                r = math.pi / 180
+                y = math.sin((lon - e["lon"]) * r) * math.cos(lat * r)
+                x = math.cos(e["lat"] * r) * math.sin(lat * r) - math.sin(e["lat"] * r) * math.cos(lat * r) * math.cos((lon - e["lon"]) * r)
+                k_uporabniku = (math.degrees(math.atan2(y, x)) + 360) % 360
+                proti = abs((k_uporabniku - smer + 180) % 360 - 180) < 70
+            out.append({"lat": round(e["lat"], 4), "lon": round(e["lon"], 4), "smer": smer, "razdalja_m": round(d, -1),
+                        "priblizuje_se": proti if proti is not None else d < 500})
+        out.sort(key=lambda x: x["razdalja_m"])
+        return {"vozila": out[:5], "cas": zdaj}
+
+    @app.get("/voznik/enote-za-prijavo")
+    async def enote_za_prijavo():
+        """Za prijavni obrazec voznika: samo id in ime (brez položajev in nalog)."""
+        return [{"id": e["id"], "ime": e["ime"]} for e in C().db.vsi("enota")]
+
+    @app.get("/dispecer/jaz")
+    async def jaz(request: Request):
+        return {"ime": uporabnik(request)}
+
+    @app.post("/dispecer/odjava")
+    async def odjava_dispecerja(request: Request):
+        ime = stanje["dispecerji"].odjava(request.cookies.get(PISKOTEK))
+        if ime:
+            C().db.revizija(ime, "Dispecer", ime, "odjava", None, None)
+        r = JSONResponse({"odjavljen": True})
+        r.delete_cookie(PISKOTEK, path="/")
+        return r
 
     async def zagon():
         if stanje["center"] is None:
@@ -147,6 +268,11 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         if not os.environ.get("AID_VOZNIK_SKRIVNOST"):
             logging.getLogger("voznik").warning("AID_VOZNIK_SKRIVNOST ni nastavljen – žetoni voznikov ne preživijo ponovnega "
                                                 "zagona (vozniki se morajo prijaviti znova). Za pravo uporabo ga nastavite.")
+        if ozadje and ploscice.na_voljo("promet"):
+            # ali ključ sploh ima Traffic API? (403 -> sloj prometa izklopljen, vmesnik skrije stikalo)
+            for sloj in ("promet", "nesrece"):
+                with contextlib.suppress(NiNaVoljo, Exception):
+                    await asyncio.wait_for(ploscice.ploscica(sloj, 12, 2218, 1453), 5)
         if not c.plan_aktiven():
             p = await c.predlagaj_plan("začetni plan izmene")
             if p:
@@ -203,7 +329,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     async def napaka_stanja(_: Request, e: NapakaStanja):
         return JSONResponse({"napaka": str(e)}, status_code=e.koda)
 
-    app.include_router(ustvari_usmerjevalnik(C, preveri_skrbnika))
+    app.include_router(ustvari_usmerjevalnik(C, preveri_skrbnika, uporabnik))
 
     # ---------- klic ----------
     @app.get("/cakajoci")
@@ -306,15 +432,23 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         return C().db.vsi("naloga")
 
     @app.get("/eta")
-    async def eta(lat: float, lon: float, n: int = 3):
-        return await C().eta_enot(lat, lon, n)
+    async def eta(lat: float, lon: float, request: Request, n: int = 3):
+        omeji("eta", request)
+        preveri_obmocje(lat, lon)
+        return await C().eta_enot(lat, lon, max(1, min(n, 10)))
 
     @app.get("/pot")
-    async def pot(enota_id: str, lat: float, lon: float):
+    async def pot(enota_id: str, lat: float, lon: float, request: Request):
+        omeji("pot", request)
+        preveri_obmocje(lat, lon)
         return await C().pot_enote(enota_id, lat, lon)
 
     @app.post("/poti")
-    async def poti(v: OdsekiVhod):
+    async def poti(v: OdsekiVhod, request: Request):
+        omeji("poti", request)
+        for o in v.odseki:
+            preveri_obmocje(*o.od)
+            preveri_obmocje(*o.do)
         return await C().poti([o.model_dump() for o in v.odseki])
 
     @app.post("/klic/{klic_id}/najblizja")
@@ -356,6 +490,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     async def zdravje(_=Depends(preveri_skrbnika)):
         c = C()
         return {"usmerjanje": c.usmerjanje.zdravje(), "poslusalec_zadnji_vir": c.poslusalec.zadnji_vir,
+                "poslusalec_napake": c.poslusalec.napake, "poslusalec_rezerva": c.poslusalec.rezerva,
                 "ai_na_voljo": c.ai_na_voljo, "ws_narocniki": len(c.objava.narocniki)}
 
     # ---------- karta (posrednik ploščic; ključ ostane na strežniku) ----------
@@ -368,7 +503,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
                 "atribucija": os.environ.get("AID_KARTA_ATRIBUCIJA", "Podlaga karte in promet: zunanji vir")}
 
     @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")
-    async def ploscica(sloj: str, z: int, x: int, y: int):
+    async def ploscica(sloj: str, z: int, x: int, y: int, request: Request):
+        omeji("ploscice", request)
+        if not ploscica_v_obmocju(z, x, y):
+            raise HTTPException(404, "ploščica izven območja")
         try:
             vsebina = await ploscice.ploscica(sloj, z, x, y)
         except NiNaVoljo:

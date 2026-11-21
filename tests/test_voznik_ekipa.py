@@ -98,7 +98,6 @@ def test_okvara_je_predlog_do_odlocitve(cl):
 
 # ---------- ovira ----------
 def test_ovira_brez_novega_plana(cl):
-    c = cl.center
     H = prijava(cl, "RV-3")
     assert cl.post("/voznik/ovira", headers=H, json={"vrsta": "tornado"}).status_code == 422
     d = cl.post("/voznik/ovira", headers=H, json={"vrsta": "zapora", "opis": "drevo čez cesto",
@@ -167,12 +166,25 @@ def test_ni_na_voljo_z_nalogami_je_predlog(cl):
 
 
 # ---------- eskalacije ----------
-def test_eskalacija_neprijavljenih_takoj(cl):
+def test_eskalacija_neprijavljenih_takoj(cl, monkeypatch):
+    """Enote brez naprave v izmeni ne sprožijo lažnega alarma; enota, ki je imela napravo in je odjavljena, ga."""
     c = cl.center
+    nv = c.naloge_voznikov
+    assert cl.get("/ekipe/eskalacije").json() == []
+    s_koraki = sorted(e for e, ks in c.plan_aktiven()["koraki_po_enoti"].items() if ks)
+    eid = s_koraki[0]
+    H = prijava(cl, eid)
+    cl.post("/voznik/odjava", headers=H)
+    nv.db.izvedi("UPDATE voznik_obvestilo SET stanje='zamenjano'")
+    nv._po_potrditvi(None, c.plan_aktiven())
     esk = {e["enota_id"]: e["razlog"] for e in cl.get("/ekipe/eskalacije").json()}
-    s_koraki = {e for e, ks in c.plan_aktiven()["koraki_po_enoti"].items() if ks}
-    assert set(esk) == s_koraki and set(esk.values()) == {"voznik_ni_prijavljen"}
-    eid = sorted(s_koraki)[0]
+    assert esk == {eid: "voznik_ni_prijavljen"}
+    # staro vedenje (alarm za vse enote brez prijave) z nastavitvijo
+    monkeypatch.setenv("AID_ESKALACIJA_BREZ_NAPRAVE", "1")
+    nv.db.izvedi("UPDATE voznik_obvestilo SET stanje='zamenjano'")
+    nv._po_potrditvi(None, c.plan_aktiven())
+    assert set(e["enota_id"] for e in cl.get("/ekipe/eskalacije").json()) == set(s_koraki)
+    # ponovna prijava in potrditev razreši eskalacijo
     H = prijava(cl, eid)
     seq = c.objava.seq
     cl.post("/voznik/potrdi", headers=H, json={"obvestilo_id": naloga(cl, H)["obvestila"][0]["id"]})

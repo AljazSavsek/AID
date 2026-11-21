@@ -90,7 +90,8 @@
     nalozi();
   });
 
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
+    await AID.prijava;
     $("obrazec-sporocila").onsubmit = async (ev) => {
       ev.preventDefault();
       const koda = $("sp-hitro").value, besedilo = $("sp-besedilo").value.trim();

@@ -9,6 +9,7 @@ Veja `voznik` vsebuje **oba dela skupaj** na istem strežniku: regijski center (
 |---|---|
 | Regijski center (dispečer) | <http://localhost:8000/> |
 | Reševalno vozilo (voznik) | <http://localhost:8000/voznik.html?enota=RV-2> |
+| Opozorilo za javnost | <http://localhost:8000/javnost.html> |
 
 ```
 Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremeni / zavrne)
@@ -37,9 +38,13 @@ Ustavite s `Ctrl+C`. Možnosti: `--brez-flet`, `--enota RV-3`, `--port 8000`, `-
 
 | Zaslon | Naslov | Prijava |
 |---|---|---|
-| Regijski center (dispečer) | <http://localhost:8000/> | ime dispečerja v glavi |
+| Regijski center (dispečer) | <http://localhost:8000/> | `M. Novak` / `DEMO-DISP` (ali `A. Kos` / `DEMO-DISP2`) |
 | Reševalno vozilo (splet) | <http://localhost:8000/voznik.html> | enota + koda, npr. `RV-3` / `DEMO-RV3` |
 | Aplikacija voznika (Flet) | okno ali <http://localhost:8550> | enota + koda |
+| Opozorilo za javnost | <http://localhost:8000/javnost.html> | brez prijave; klik na karto = vaša lokacija |
+
+Opozorilo za javnost se prikaže, ko je v radiju 1,5 km vozilo, ki je **na poti na nujno vožnjo** (P1/P2) in pošilja GPS
+(npr. spletni zaslon voznika z »Simuliraj vožnjo«). Javni endpoint ne vrne oznake vozila ne podatkov o nalogi ali pacientu.
 
 Ena enota = ena naprava: prijava iste enote v drugi aplikaciji odjavi prejšnjo. Za demo prijavite spletni zaslon in
 Flet aplikacijo z različnima voziloma. Oba spletna zaslona lahko v Chromu/Edgu namestite kot aplikacijo
@@ -60,6 +65,28 @@ Testi:
 ```bash
 python -m pytest -q tests
 ```
+
+## Prijava in varnost
+
+- **Dispečer** se prijavi z imenom in geslom. Seja je piškotek `HttpOnly` / `SameSite=Strict`; ime v revizijski sledi
+  pride iz seje (glava odjemalca se ne upošteva). Računi: `AID_DISPECERJI="Ime Priimek:geslo;…"`; demo računa iz
+  scenarija izklopite z `AID_DISPECER_DEMO=0`. 5 napačnih gesel v 5 min zaklene račun.
+- **Brez prijave** so dostopne le statične strani, prijava, API voznika (lastni žetoni), `/javnost/*` in `/interno/*`
+  z žetonom skrbnika. Vse drugo (naloge, podatki pacientov, plan, `/ws`, revizija, karta, poti) vrne 401.
+- **Kvota zunanjih ponudnikov:** karta in poti le s prijavo (dispečer ali voznik), omejitev zahtevkov na uporabnika,
+  le območje Slovenije.
+- **Skrivnosti** za žetone (`AID_DISPECER_SKRIVNOST`, `AID_VOZNIK_SKRIVNOST`) `zazeni.py` ustvari enkrat in jih hrani
+  v `podatki/.skrivnosti.json` (ni v gitu), zato prijave preživijo ponovni zagon. Za strežnik jih nastavite v `.env`.
+- Dokumentacija API (`/interno/docs`) je izklopljena; vklop `AID_DOCS=1`.
+
+**Preizkus AI v oblaku** (z `ANTHROPIC_API_KEY` v `.env`; stane nekaj centov):
+
+```bash
+python -m poslusalec.preveri
+```
+
+Če AI v oblaku med delom odpove, dispečer dobi opozorilo »AI v oblaku ni na voljo – predloge pripravlja rezerva«,
+razlog je na `/interno/zdravje`.
 
 ## Ključi API (neobvezni)
 

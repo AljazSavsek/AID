@@ -9,7 +9,10 @@
   let seq = 0;
   let ws = null, wsOdprt = false, poskusi = 0, pollTimer = null, zadnjiOdziv = 0;
 
-  AID.uporabnik = () => (document.getElementById("ime-uporabnika")?.value || AID.imeUporabnika || "dispečer").trim();
+  AID.uporabnik = () => AID.imeUporabnika || "";
+  // vsi deli vmesnika dispečerja počakajo na prijavo (seja je HttpOnly piškotek; ime pride s strežnika)
+  let razresiPrijavo;
+  AID.prijava = new Promise((r) => (razresiPrijavo = r));
 
   AID.na = function (tip, fn) { (poslusalci[tip] = poslusalci[tip] || []).push(fn); };
   /* ura strežnika (starost položajev se računa v času strežnika, ne brskalnika) */
@@ -43,7 +46,7 @@
     try {
       r = await fetch(pot, {
         method: metoda,
-        headers: { "Content-Type": "application/json", "X-Uporabnik": encodeURIComponent(AID.uporabnik()) }, // šumniki niso dovoljeni v glavi
+        headers: { "Content-Type": "application/json" }, // ime dispečerja pride iz seje na strežniku
         body: telo === undefined ? undefined : JSON.stringify(telo),
       });
     } catch (e) {
@@ -52,9 +55,49 @@
     }
     zadnjiOdziv = Date.now();
     const podatki = r.headers.get("content-type")?.includes("json") ? await r.json() : null;
+    if (r.status === 401 && document.getElementById("prijava-disp")) { pokaziPrijavo("Seja je potekla – prijavite se znova."); throw new Error("Prijava je potrebna."); }
     if (!r.ok) throw new Error((podatki && (podatki.napaka || podatki.detail)) || "Napaka " + r.status);
     return podatki;
   };
+
+  function nastaviIme(ime) {
+    AID.imeUporabnika = ime;
+    const el = document.getElementById("ime-uporabnika");
+    if (el) el.textContent = ime;
+    const av = document.getElementById("avatar");
+    if (av) av.textContent = ime.split(/[\s.]+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase();
+  }
+  function pokaziPrijavo(sporocilo) {
+    const o = document.getElementById("prijava-disp");
+    if (AID.imeUporabnika && sporocilo) { location.reload(); return; } // seja potekla med delom -> čisto stanje
+    o.classList.remove("skrito");
+    document.getElementById("napaka-prijave-disp").textContent = sporocilo || "";
+    document.getElementById("prijava-ime").focus();
+  }
+  async function prijavaDispecerja() {
+    const o = document.getElementById("prijava-disp");
+    if (!o) return false;
+    try {
+      const r = await fetch("/dispecer/jaz");
+      if (r.ok) { nastaviIme((await r.json()).ime); return true; }
+    } catch (_) { nastaviStanje("brez", "Brez povezave"); }
+    pokaziPrijavo();
+    return new Promise((koncano) => {
+      document.getElementById("obrazec-prijave-disp").onsubmit = async (e) => {
+        e.preventDefault();
+        const ime = document.getElementById("prijava-ime").value.trim(), geslo = document.getElementById("prijava-geslo").value;
+        try {
+          const r = await fetch("/dispecer/prijava", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ime, geslo }) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { document.getElementById("napaka-prijave-disp").textContent = d.detail || d.napaka || "Prijava ni uspela."; return; }
+          document.getElementById("prijava-geslo").value = "";
+          o.classList.add("skrito");
+          nastaviIme(d.ime);
+          koncano(true);
+        } catch (_) { document.getElementById("napaka-prijave-disp").textContent = "Strežnik ni dosegljiv."; }
+      };
+    });
+  }
 
   /* ---------- WebSocket z rezervo ---------- */
   function poveziWs() {
@@ -118,14 +161,11 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".pogledi button").forEach((b) => (b.onclick = () => preklopi(b.dataset.pogled)));
-    const ime = document.getElementById("ime-uporabnika");
-    if (!ime) { poveziZacetek(); return; } // stran brez glave dispečerja (npr. voznik)
-    ime.value = AID.beri("aid_uporabnik", ime.value);
-    const avatar = () => (document.getElementById("avatar").textContent = ime.value.split(/[\s.]+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase());
-    avatar();
-    ime.onchange = () => { AID.pisi("aid_uporabnik", ime.value.trim()); avatar(); };
+    if (!document.getElementById("prijava-disp")) { poveziZacetek(); return; } // stran brez prijave dispečerja
     preklopi(AID.beri("aid_pogled", "klic"));
-    poveziZacetek();
+    const odjava = document.getElementById("gumb-odjava-disp");
+    if (odjava) odjava.onclick = async () => { try { await fetch("/dispecer/odjava", { method: "POST" }); } catch (_) {} location.reload(); };
+    prijavaDispecerja().then(() => { razresiPrijavo(); poveziZacetek(); });
   });
 })();
 
@@ -152,10 +192,14 @@
       if (++napake >= 4 && karta.hasLayer(sloj)) { karta.removeLayer(sloj); rezerva(karta); if (izid.promet) karta.removeLayer(izid.promet); }
     });
     if (promet && st.promet) {
-      izid.promet = L.layerGroup([
-        L.tileLayer("/ploscice/promet/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.85 }),
-        L.tileLayer("/ploscice/nesrece/{z}/{x}/{y}.png", { maxZoom: 19 }),
-      ]);
+      const tok = L.tileLayer("/ploscice/promet/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.85 });
+      const nes = L.tileLayer("/ploscice/nesrece/{z}/{x}/{y}.png", { maxZoom: 19 });
+      izid.promet = L.layerGroup([tok, nes]);
+      let napakePrometa = 0;
+      [tok, nes].forEach((sl) => sl.on("tileerror", () => {
+        // sloj prometa ne deluje (npr. Traffic API ni vklopljen) -> skrij sloj in stikalo
+        if (++napakePrometa === 6) { karta.removeLayer(izid.promet); izid.onIzpad && izid.onIzpad(); }
+      }));
     }
     return izid;
   };
