@@ -158,3 +158,17 @@ def test_analiza_vrzeli():
     r = analiziraj(fiksi, 15)
     assert r["fiksi"] == 200 and r["mediana_s"] == 2 and len(r["vrzeli"]) == 1 and r["vrzeli"][0][1] == pytest.approx(202)
     assert 0.6 < r["pokritost"] < 0.7
+
+
+def test_odjemalec_sporocila_in_predlogi(okolje):
+    cl, c, o, tr, tmp = okolje
+    pozeni(cl, o.prijava, "RV-3", "DEMO-RV3", "tel")
+    assert pozeni(cl, o.sporocilo, "zamuda")["besedilo"] == "Zamuda"
+    assert pozeni(cl, o.sporocilo, None, "Gneča")["besedilo"] == "Gneča"
+    d = pozeni(cl, o.ovira, "zapora", "drevo")
+    assert d["stanje"] == "predlagano" and d["parametri"]["porocal"] == "RV-3"
+    m = c.ekipa.od_dispecerja("RV-3", "M. Novak", "pocakaj", None)
+    n = pozeni(cl, o.naloga)
+    assert n["sporocila"][0]["id"] == m["id"] and n["predlogi"][-1]["tip"] == "ovira_na_cesti"
+    pozeni(cl, o.prebrano, m["id"])
+    assert c.ekipa.sporocila("RV-3")[0]["prebrano"]

@@ -54,7 +54,28 @@ class PotrditevVhod(BaseModel):
 
 
 class SporociloVhod(BaseModel):
-    besedilo: str = Field(min_length=1, max_length=500)
+    koda: str | None = Field(default=None, pattern=r"^[a-z_]{2,30}$")
+    besedilo: str | None = Field(default=None, max_length=500)
+
+
+class OkvaraVhod(BaseModel):
+    opis: str | None = Field(default=None, max_length=200)
+
+
+class Lokacija(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+
+
+class OviraVhod(BaseModel):
+    vrsta: str = Field(pattern=r"^[a-z_]{2,30}$")
+    opis: str | None = Field(default=None, max_length=200)
+    lokacija: Lokacija | None = None
+
+
+class OdlocitevVhod(BaseModel):
+    parametri: dict | None = None
+    razlog: str | None = Field(default=None, max_length=200)
 
 
 class Baterija(BaseModel):
@@ -74,6 +95,11 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
     r = APIRouter()
     omejitev_prijava: dict = {}
     omejitev_polozaj: dict = {}
+    omejitev_ekipa: dict = {}
+
+    def omeji_ekipo(enota_id: str) -> None:
+        if not omejevalnik(omejitev_ekipa, 20).dovoli(enota_id):
+            raise HTTPException(429, "preveč sporočil")
 
     def omejevalnik(shramba: dict, na_minuto: int) -> Omejevalnik:
         if "o" not in shramba:
@@ -167,11 +193,29 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
     async def potrdi(p: PotrditevVhod, v: dict = Depends(voznik)):
         return C().naloge_voznikov.potrdi(v["enota"], p.obvestilo_id)
 
+    # ---------- sporočila in predlogi ekipe ----------
     @r.post("/voznik/sporocilo")
-    async def sporocilo(s: SporociloVhod, v: dict = Depends(voznik)):
-        """Besedilo ekipe -> AI -> predlog dogodka za dispečerja (nič se ne spremeni brez potrditve)."""
-        from api import ekipa
-        return await ekipa.sporocilo(C(), v["enota"], s.besedilo, f"voznik {v['enota']}")
+    async def sporocilo_voznika(m: SporociloVhod, v: dict = Depends(voznik)):
+        omeji_ekipo(v["enota"])
+        s = C().ekipa.od_voznika(v["enota"], m.koda, m.besedilo)
+        if m.besedilo and not m.koda:
+            # specifikacija 9: besedilo ekipe -> AI -> PREDLOG dogodka (dispečer odloči)
+            s["predlog_ai"] = await C().ekipa.ai_predlog(v["enota"], m.besedilo)
+        return s
+
+    @r.post("/voznik/sporocilo/{sporocilo_id}/prebrano")
+    async def prebrano(sporocilo_id: str, v: dict = Depends(voznik)):
+        return C().ekipa.prebrano(v["enota"], sporocilo_id)
+
+    @r.post("/voznik/okvara")
+    async def okvara(o: OkvaraVhod, v: dict = Depends(voznik)):
+        omeji_ekipo(v["enota"])
+        return C().ekipa.predlagaj(v["enota"], "okvara_vozila", o.model_dump())
+
+    @r.post("/voznik/ovira")
+    async def ovira(o: OviraVhod, v: dict = Depends(voznik)):
+        omeji_ekipo(v["enota"])
+        return C().ekipa.predlagaj(v["enota"], "ovira_na_cesti", o.model_dump())
 
     @r.get("/voznik/dogodki")
     async def dogodki(od: int = 0, zagon: str | None = None, v: dict = Depends(voznik)):
@@ -213,6 +257,42 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
             pass
         finally:
             o.narocniki.get(v["enota"], set()).discard(q)
+
+    # ---------- dispečer: ekipe ----------
+    def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
+        return (x_uporabnik or "dispečer").strip()[:60]
+
+    @r.get("/ekipe/predlogi")
+    async def predlogi_ekip(vsi: bool = False):
+        return C().ekipa.predlogi(not vsi)
+
+    @r.post("/ekipe/predlog/{dogodek_id}/{akcija}")
+    async def odloci(dogodek_id: str, akcija: str, o: OdlocitevVhod | None = None, u: str = Depends(uporabnik)):
+        if akcija not in ("sprejmi", "spremeni", "zavrni"):
+            raise HTTPException(404, "neznano dejanje")
+        o = o or OdlocitevVhod()
+        return await C().ekipa.odloci(dogodek_id, u, akcija, o.parametri, o.razlog)
+
+    @r.get("/ekipe/sporocila")
+    async def sporocila(enota_id: str | None = None):
+        return C().ekipa.sporocila(enota_id, 50)
+
+    @r.post("/enote/{enota_id}/sporocilo")
+    async def sporocilo_dispecerja(enota_id: str, m: SporociloVhod, u: str = Depends(uporabnik)):
+        return C().ekipa.od_dispecerja(enota_id, u, m.koda, m.besedilo)
+
+    @r.get("/ekipe/eskalacije")
+    async def eskalacije():
+        return C().naloge_voznikov.eskalacije()
+
+    @r.get("/ekipe/hitra-sporocila")
+    async def hitra():
+        from .ekipa import HITRA_DISPECER, HITRA_VOZNIK
+        return {"dispecer": HITRA_DISPECER, "voznik": HITRA_VOZNIK}
+
+    @r.get("/ovire")
+    async def ovire():
+        return C().ekipa.ovire()
 
     # ---------- dispečer / skrbnik ----------
     @r.post("/enote/{enota_id}/koda")

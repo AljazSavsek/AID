@@ -217,10 +217,18 @@
       return `<li>${esc(o.vrsta[0].toUpperCase() + o.vrsta.slice(1))}${ulica(o.od_m) ? " – " + esc(ulica(o.od_m)) : ""}${o.zamuda_s ? ` · +${Math.max(1, Math.round(o.zamuda_s / 60))} min` : ""}
         <small>čez ${km(pred)}${o.hitrost_kmh ? ` · ${o.hitrost_kmh} km/h` : ""}</small></li>`;
     });
+    const PREDLOGI = { okvara_vozila: "Okvara vozila", ovira_na_cesti: "Ovira na cesti", prevoz_z_nujne_voznje: "Prevoz pacienta", enota_ni_na_voljo: "Ni na voljo" };
+    const STP = { predlagano: "čaka dispečerja", sprejeto: "dispečer je potrdil", spremenjeno: "dispečer je potrdil (spremenjeno)", zavrnjeno: "dispečer je zavrnil" };
+    const dispecer = (V.n.sporocila || []).filter((m) => m.smer === "od_dispecerja" && !m.prebrano).map((m) =>
+      `<li class="dispecer">${esc(m.besedilo)}<small>dispečer · ${AID.uraKratko(new Date(m.cas * 1000))}</small><button class="mali" data-prebrano="${esc(m.id)}">Prebrano</button></li>`);
+    const predlogi = (V.n.predlogi || []).filter((d) => d.stanje === "predlagano" || (d.ustvarjeno || 0) > Date.now() / 1000 - 900).slice(-2).map((d) =>
+      `<li class="center">${esc(PREDLOGI[d.tip] || d.tip)}: ${esc(STP[d.stanje] || d.stanje)}${d.razlog ? " – " + esc(d.razlog) : ""}<small>predlog ekipe</small></li>`);
     const centra = V.obvestila.map((o) => `<li class="${o.razred}">${esc(o.besedilo)}<small>${AID.uraKratko(new Date(o.cas * 1000))}</small></li>`);
-    $("opozorila").innerHTML = [...prejem, ...prometna, ...centra].join("") || '<li class="ni">Ni opozoril na poti.</li>';
+    $("opozorila").innerHTML = [...prejem, ...dispecer, ...predlogi, ...prometna, ...centra].join("") || '<li class="ni">Ni opozoril na poti.</li>';
   }
   $("opozorila").onclick = async (e) => {
+    const pr = e.target.closest("[data-prebrano]");
+    if (pr) { try { await api(`/voznik/sporocilo/${pr.dataset.prebrano}/prebrano`, { metoda: "POST" }); await osvezi(); } catch (e2) { napaka(e2); } return; }
     const b = e.target.closest("[data-potrdi]"); if (!b) return;
     try { await api("/voznik/potrdi", { metoda: "POST", telo: { obvestilo_id: b.dataset.potrdi } }); await osvezi(); }
     catch (e2) { napaka(e2); }
@@ -328,18 +336,25 @@
   function nastaviSledi(v) { V.sledi = v; $("gumb-sledi").classList.toggle("vklopljen", v); }
   $("gumb-sledi").onclick = () => { nastaviSledi(true); izrisiPot(); };
 
-  /* ---------- sporočilo centru -> AI -> predlog za dispečerja ---------- */
+  /* ---------- sporočila centru: hitra, besedilo (-> AI predlog), okvara, ovira ---------- */
   const dlg = $("dlg-sporocilo");
   $("gumb-sporocilo").onclick = () => { $("sporocilo-besedilo").value = ""; dlg.showModal(); };
-  dlg.querySelectorAll("[data-hitro]").forEach((b) => (b.onclick = () => ($("sporocilo-besedilo").value = b.dataset.hitro)));
+  async function poslji(pot, telo, naslov) {
+    try {
+      const r = await api(pot, { metoda: "POST", telo });
+      dlg.close("poslano");
+      const ai = r && r.predlog_ai;
+      AID.obvestilo(naslov, ai ? "AI je iz sporočila pripravil predlog – dispečer ga bo potrdil." : "Dispečer je prejel.");
+      await osvezi();
+    } catch (e) { napaka(e); }
+  }
+  dlg.querySelectorAll("[data-koda]").forEach((b) => (b.onclick = () => poslji("/voznik/sporocilo", { koda: b.dataset.koda }, b.textContent)));
+  dlg.querySelector("[data-okvara]").onclick = () => poslji("/voznik/okvara", { opis: $("sporocilo-besedilo").value.trim() || null }, "Okvara prijavljena");
+  dlg.querySelector("[data-ovira]").onclick = () => poslji("/voznik/ovira", { vrsta: $("vrsta-ovire").value, opis: $("sporocilo-besedilo").value.trim() || null }, "Ovira prijavljena");
   dlg.addEventListener("close", async () => {
     if (dlg.returnValue !== "poslji") return;
     const t = $("sporocilo-besedilo").value.trim(); if (!t) return;
-    try {
-      const r = await api("/voznik/sporocilo", { metoda: "POST", telo: { besedilo: t } });
-      dodajObvestilo("Sporočilo poslano: " + t, "center"); izrisiOpozorila();
-      AID.obvestilo("Poslano centru", r.predlogi_dogodkov.length ? "Dispečer bo potrdil predlagan dogodek." : "Sporočilo je prejel dispečer.");
-    } catch (e) { napaka(e); }
+    await poslji("/voznik/sporocilo", { besedilo: t }, "Sporočilo poslano");
   });
 
   /* ---------- sprotne spremembe: /ws/voznik (žeton v prvem sporočilu), rezerva polling ---------- */

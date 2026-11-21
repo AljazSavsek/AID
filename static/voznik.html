@@ -86,13 +86,20 @@
 <dialog id="dlg-sporocilo" class="dlg-v">
   <form method="dialog">
     <h3>Sporočilo regijskemu centru</h3>
-    <p class="pojasnilo-v">AI iz sporočila pripravi predlog, dispečer ga potrdi.</p>
-    <div class="hitra">
-      <button type="button" data-hitro="Vozilo je obstalo. Oprema je še v njem.">Vozilo je obstalo, tovor v vozilu</button>
-      <button type="button" data-hitro="Potrebujemo dodatno ekipo na kraju.">Potrebujemo dodatno ekipo</button>
-      <button type="button" data-hitro="Pacient prevzet, na poti v bolnišnico.">Pacient prevzet</button>
+    <p class="pojasnilo-v">Hitro sporočilo ali besedilo. Iz besedila AI pripravi predlog (npr. okvara), dispečer ga potrdi.</p>
+    <div class="hitra-mreza">
+      <button type="button" data-koda="zamuda">Zamuda</button>
+      <button type="button" data-koda="poklici_me">Pokliči me</button>
+      <button type="button" data-koda="potrebujem_pomoc" class="nujno">Potrebujem pomoč</button>
+      <button type="button" data-koda="policija" class="nujno">Policija potrebna</button>
     </div>
-    <textarea id="sporocilo-besedilo" rows="3" placeholder="Ali napišite sporočilo …"></textarea>
+    <div class="hitra">
+      <button type="button" data-okvara>⚠ Okvara vozila (tovor ostane v vozilu)</button>
+      <button type="button" data-ovira>⛔ Ovira na cesti na moji lokaciji</button>
+      <select id="vrsta-ovire" aria-label="Vrsta ovire"><option value="zapora">zapora</option><option value="nesreca">nesreča</option>
+        <option value="dela_na_cesti">dela na cesti</option><option value="poplava">poplava</option><option value="zastoj">zastoj</option><option value="drugo">drugo</option></select>
+    </div>
+    <textarea id="sporocilo-besedilo" rows="3" maxlength="500" placeholder="Ali napišite sporočilo … (npr. »Vozilo je obstalo. Oprema je še v njem.«)"></textarea>
     <div class="vrstica-gumbov"><button class="gumb" value="preklici">Prekliči</button><button class="gumb rdec" id="poslji-sporocilo" value="poslji">POŠLJI</button></div>
   </form>
 </dialog>

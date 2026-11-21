@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS voznik_faza (
     faza TEXT NOT NULL, cas REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS voznik_obvestilo (
     id TEXT PRIMARY KEY, enota_id TEXT NOT NULL, plan_id TEXT NOT NULL, verzija INTEGER,
-    ustvarjeno REAL NOT NULL, rok REAL NOT NULL, stanje TEXT NOT NULL, potrjeno REAL, razlike TEXT NOT NULL);
+    ustvarjeno REAL NOT NULL, rok REAL NOT NULL, stanje TEXT NOT NULL, potrjeno REAL, razlike TEXT NOT NULL,
+    eskalirano REAL, razlog_eskalacije TEXT);
 CREATE INDEX IF NOT EXISTS voznik_obvestilo_enota ON voznik_obvestilo(enota_id);
 CREATE TABLE IF NOT EXISTS voznik_pot (
     enota_id TEXT PRIMARY KEY, podatki TEXT NOT NULL);
@@ -82,6 +83,12 @@ class NalogeVoznikov:
         self.rok_potrditve_s = rok_potrditve_s
         self.objava = ObjavaVoznikom()
         self.db.skripta(TABELE)
+        for stolpec in ("eskalirano REAL", "razlog_eskalacije TEXT"):  # starejše baze (M2)
+            try:
+                self.db.izvedi(f"ALTER TABLE voznik_obvestilo ADD COLUMN {stolpec}")
+            except Exception:  # noqa: BLE001 – stolpec že obstaja
+                pass
+        self.ekipa = None  # nastavi Center (voznik/ekipa.py)
         center.po_potrditvi_plana.append(self._po_potrditvi)
 
     # ================= koraki =================
@@ -141,12 +148,35 @@ class NalogeVoznikov:
             return ["opravljeno"]  # prevoz brez cilja določi dispečer (M3: predlog)
         return ["pacient_nalozen"]
 
+    def mogoci_predlogi(self, enota_id: str) -> list[str]:
+        """Stanja, ki jih voznik lahko sporoči, a postanejo PREDLOG dispečerju (spremenijo plan)."""
+        e = self.db.beri("enota", enota_id)
+        if not e or e["stanje"] in ("okvara", "ni_na_voljo"):
+            return []
+        odprti = {d["tip"] for d in self.db.vsi("dogodek", stanje="predlagano", vir="ekipa") if d.get("enota_id") == enota_id}
+        out = []
+        k = self.trenutni(enota_id)
+        if k:
+            n = self.db.beri("naloga", k["naloga_id"]) or {}
+            if (k["akcija"] == "prevzem" and not n.get("dostava") and self.faza(enota_id, k) == "na_prizoriscu"
+                    and "prevoz_z_nujne_voznje" not in odprti and int(e.get("kapaciteta", {}).get("pacienti", 0)) > 0):
+                out.append("pacient_nalozen")
+            if not e.get("tovor") and "enota_ni_na_voljo" not in odprti:
+                out.append("ni_na_voljo")
+        return out
+
     # ================= sprememba stanja =================
     def spremeni(self, enota_id: str, stanje: str, naloga_id: str | None = None, akcija: str | None = None) -> dict:
         if stanje not in VSA_STANJA:
             raise NapakaStanja("neznano stanje", 422)
         e = self.db.beri("enota", enota_id)
         k = self.trenutni(enota_id)
+        if self.ekipa and stanje in self.mogoci_predlogi(enota_id) and stanje not in self.dovoljena(enota_id):
+            # sprememba plana -> predlog dispečerju (vir=ekipa)
+            if naloga_id and k and (naloga_id, akcija) != _kljuc(k):
+                raise NapakaStanja("korak ni več aktualen – osvežite nalogo")
+            self.ekipa.predlagaj(enota_id, "prevoz_z_nujne_voznje" if stanje == "pacient_nalozen" else "enota_ni_na_voljo")
+            return self.za_voznika(enota_id)
         if stanje in IZMENA:
             return self._izmena(e, stanje, k)
         if not k:
@@ -233,6 +263,9 @@ class NalogeVoznikov:
     def _po_potrditvi(self, star: dict | None, nov: dict) -> None:
         """Ob potrditvi plana: enotam, katerim se je spremenil seznam preostalih korakov, pošlji obvestilo z razliko."""
         enote = set(nov["koraki_po_enoti"]) | set((star or {}).get("koraki_po_enoti", {}))
+        prijavljene = self.c.avtentikacija.prijavljena()
+        signali = {e["id"]: (e.get("polozaj") or {}).get("signal") for e in self.c.enote()}
+        takoj = []
         for eid in sorted(enote):
             prej = [_kljuc(k) for k in self.preostali(eid, star)] if star else []
             potem = [_kljuc(k) for k in self.preostali(eid, nov)]
@@ -242,12 +275,16 @@ class NalogeVoznikov:
                        "odstranjeni": [list(x) for x in prej if x not in potem],
                        "vrstni_red": [x for x in prej if x in potem] != [x for x in potem if x in prej],
                        "prej": [list(x) for x in prej], "potem": [list(x) for x in potem]}
+            for star_o in self.obvestila(eid):
+                if star_o.get("eskalirano"):
+                    self.c.objava.objavi("eskalacija_razresena", {"enota_id": eid, "obvestilo_id": star_o["id"], "zamenjano": True})
             self.db.izvedi("UPDATE voznik_obvestilo SET stanje='zamenjano' WHERE enota_id=? AND stanje='caka'", (eid,))
             zdaj = self.ura()
             o = {"id": "o-" + secrets.token_hex(6), "enota_id": eid, "plan_id": nov["id"], "verzija": nov.get("verzija"),
                  "ustvarjeno": zdaj, "rok": zdaj + self.rok_potrditve_s, "stanje": "caka" if potem else "obvescen",
                  "potrjeno": None, "razlike": razlike}
-            self.db.izvedi("INSERT INTO voznik_obvestilo VALUES (?,?,?,?,?,?,?,?,?)",
+            self.db.izvedi("INSERT INTO voznik_obvestilo(id, enota_id, plan_id, verzija, ustvarjeno, rok, stanje, potrjeno, razlike) "
+                           "VALUES (?,?,?,?,?,?,?,?,?)",
                            (o["id"], eid, o["plan_id"], o["verzija"], zdaj, o["rok"], o["stanje"], None, json.dumps(razlike)))
             if not prej or not potem or prej[0] != potem[0]:
                 self.db.izvedi("DELETE FROM voznik_pot WHERE enota_id=?", (eid,))
@@ -255,6 +292,36 @@ class NalogeVoznikov:
                     self._izracunaj_pot_v_ozadju(eid)
             self.objava.objavi(eid, "plan", {"obvestilo": o})
             self.c.objava.objavi("voznik_obvestilo", {k: o[k] for k in ("id", "enota_id", "plan_id", "stanje", "rok", "razlike")})
+            if o["stanje"] == "caka" and (eid not in prijavljene or signali.get(eid) == "ni_signala"):
+                # voznik obvestila ne more prejeti -> dispečer izve takoj, ne šele po roku
+                takoj.append(self._eskaliraj(o, "voznik_ni_prijavljen" if eid not in prijavljene else "ni_signala", objavi_opozorilo=False))
+        if takoj:
+            self.c.objava.objavi("opozorilo", {"vrsta": "eskalacija", "nujno": True, "sporocilo":
+                                               "Plan ne doseže voznikov: " + ", ".join(f"{x['enota_id']} ({RAZLOGI[x['razlog']]})" for x in takoj)})
+
+    # ================= eskalacije =================
+    def _eskaliraj(self, o: dict, razlog: str, objavi_opozorilo: bool = True) -> dict:
+        zdaj = self.ura()
+        self.db.izvedi("UPDATE voznik_obvestilo SET eskalirano=?, razlog_eskalacije=? WHERE id=?", (zdaj, razlog, o["id"]))
+        e = {"enota_id": o["enota_id"], "obvestilo_id": o["id"], "plan_id": o["plan_id"], "razlog": razlog,
+             "ustvarjeno": o["ustvarjeno"], "eskalirano": zdaj}
+        self.db.revizija("sistem", "Plan", o["plan_id"], "eskalacija", None, e)
+        self.c.objava.objavi("eskalacija", e)
+        if objavi_opozorilo:
+            self.c.objava.objavi("opozorilo", {"vrsta": "eskalacija", "enota_id": o["enota_id"], "nujno": True,
+                                               "sporocilo": f"{o['enota_id']}: {RAZLOGI[razlog]} – plan ni potrjen."})
+        return e
+
+    def preveri_eskalacije(self, zdaj: float | None = None) -> list[dict]:
+        """Nepotrjena obvestila po roku -> eskalacija (enkrat na obvestilo)."""
+        zdaj = self.ura() if zdaj is None else zdaj
+        vr = self.db.izvedi("SELECT * FROM voznik_obvestilo WHERE stanje='caka' AND eskalirano IS NULL AND rok < ?", (zdaj,))
+        return [self._eskaliraj(dict(r), "ni_potrditve") for r in vr]
+
+    def eskalacije(self) -> list[dict]:
+        vr = self.db.izvedi("SELECT * FROM voznik_obvestilo WHERE stanje='caka' AND eskalirano IS NOT NULL ORDER BY eskalirano")
+        return [{"enota_id": r["enota_id"], "obvestilo_id": r["id"], "plan_id": r["plan_id"], "razlog": r["razlog_eskalacije"],
+                 "ustvarjeno": r["ustvarjeno"], "eskalirano": r["eskalirano"]} for r in vr]
 
     def obvestila(self, enota_id: str, samo_odprta: bool = True) -> list[dict]:
         sql = "SELECT * FROM voznik_obvestilo WHERE enota_id=?" + (" AND stanje='caka'" if samo_odprta else "") + " ORDER BY ustvarjeno"
@@ -273,6 +340,8 @@ class NalogeVoznikov:
                              {"obvestilo": o["id"], "cez_s": round(zdaj - o["ustvarjeno"], 1)})
             self.c.objava.objavi("voznik_potrditev", {"enota_id": enota_id, "obvestilo_id": o["id"], "plan_id": o["plan_id"],
                                                      "potrjeno": zdaj, "pravocasno": zdaj <= o["rok"]})
+            if o.get("eskalirano"):
+                self.c.objava.objavi("eskalacija_razresena", {"enota_id": enota_id, "obvestilo_id": o["id"], "potrjeno": zdaj})
         return [o["id"] for o in odprta]
 
     def potrdi(self, enota_id: str, obvestilo_id: str) -> dict:
@@ -344,7 +413,10 @@ class NalogeVoznikov:
                           "tovor": [t["naloga_id"] for t in e.get("tovor", [])]} if e else None,
                 "plan": {"id": plan["id"], "verzija": plan.get("verzija"), "potrjen_ob": plan.get("potrjen_ob")} if plan else None,
                 "koraki": koraki, "faza": self.faza(enota_id, k) if k else None,
-                "dovoljena_stanja": self.dovoljena(enota_id), "pot": self.pot(enota_id),
+                "dovoljena_stanja": self.dovoljena(enota_id), "mogoci_predlogi": self.mogoci_predlogi(enota_id),
+                "predlogi": self.ekipa.predlogi_enote(enota_id) if self.ekipa else [],
+                "sporocila": self.ekipa.sporocila(enota_id, 10) if self.ekipa else [],
+                "pot": self.pot(enota_id),
                 "obvestila": self.obvestila(enota_id), "zagon": self.objava.zagon, "seq": self.objava.seq}
 
     def opis_za_dispecerja(self, enota_id: str) -> dict:
@@ -353,7 +425,12 @@ class NalogeVoznikov:
         return {"prijavljen": enota_id in self.c.avtentikacija.prijavljena(),
                 "korak": {"naloga_id": k["naloga_id"], "akcija": k["akcija"]} if k else None,
                 "faza": self.faza(enota_id, k) if k else None,
-                "obvestilo": {"id": o["id"], "stanje": o["stanje"], "rok": o["rok"], "potrjeno": o["potrjeno"]} if o else None}
+                "obvestilo": {"id": o["id"], "stanje": o["stanje"], "rok": o["rok"], "potrjeno": o["potrjeno"],
+                              "eskalirano": o.get("eskalirano"), "razlog_eskalacije": o.get("razlog_eskalacije")} if o else None}
+
+
+RAZLOGI = {"ni_potrditve": "voznik ni potrdil v roku", "voznik_ni_prijavljen": "voznik ni prijavljen",
+           "ni_signala": "naprava brez signala"}
 
 
 def _naloga_za_voznika(n: dict) -> dict:

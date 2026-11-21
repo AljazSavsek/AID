@@ -104,3 +104,9 @@ body.voznik { background: #0E1114; color: #fff; overflow: hidden; }
 .napaka-prijave { color: var(--rdeca-svetla); font-weight: 600; margin: 0; min-height: 1em; font-size: 14px; }
 .kv.opozorila li.prejem { background: var(--rdeca); border-left-color: #fff; }
 .kv.opozorila li.prejem button { margin-top: 6px; width: 100%; background: #fff; color: var(--rdeca); border: 0; border-radius: 6px; padding: 10px; font-weight: 800; font-size: 15px; }
+.hitra-mreza { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.hitra-mreza button { background: var(--antracit-2); color: #fff; border: 1px solid #3A414B; border-radius: 8px; padding: 12px 8px; font-weight: 700; }
+.hitra-mreza button.nujno { border-color: var(--rdeca-svetla); color: var(--rdeca-svetla); }
+.hitra select { background: #14181C; color: #fff; border: 1px solid #3A414B; border-radius: 8px; padding: 8px; }
+.kv.opozorila li.dispecer { background: rgba(255,255,255,.1); border-left-color: #fff; }
+.kv.opozorila li button.mali { margin-top: 6px; background: transparent; color: #fff; border: 1px solid #fff; border-radius: 6px; padding: 4px 10px; font-weight: 700; }

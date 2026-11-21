@@ -25,6 +25,9 @@ from naprava import Naprava
 dnevnik = logging.getLogger("voznik.ui")
 VISINA_GUMBA = 84
 OPOZORILO_VSAKIH_S = 10
+PRAG_VOZNJE_MS = 10 / 3.6  # nad 10 km/h samo hitra sporočila
+HITRA = ("prejeto", "na_poti", "zamuda", "potrebujem_pomoc", "poklici_me", "policija")
+OVIRE = ("zapora", "nesreca", "dela_na_cesti", "poplava", "zastoj", "drugo")
 
 
 async def mapa_podatkov(page: ft.Page) -> Path:
@@ -55,6 +58,10 @@ class AplikacijaVoznika:
         self._delam = False
         self._zadnji_izris = 0.0
         self._potrjuje_odjavo = False
+        self._potrjuje_okvaro = False
+        self.razdelek: str | None = None  # None | "sporocila" | "tezava"
+        self.besedilo_sporocila = ft.TextField(label=t("sporocilo.besedilo"), max_length=500, multiline=True)
+        self._pot_cas: float | None = None
         self.posiljalec = self.sinh = None
         self.v_ospredju = True
         page.on_app_lifecycle_state_change = self._zivljenje
@@ -142,6 +149,10 @@ class AplikacijaVoznika:
             await self.odjemalec.odjava()
         self.vrsta.pocisti()
         self._potrjuje_odjavo = False
+        self._potrjuje_okvaro = False
+        self.razdelek: str | None = None  # None | "sporocila" | "tezava"
+        self.besedilo_sporocila = ft.TextField(label=t("sporocilo.besedilo"), max_length=500, multiline=True)
+        self._pot_cas: float | None = None
         self._prikazi_prijavo()
         self.page.update()
 
@@ -173,8 +184,25 @@ class AplikacijaVoznika:
         self._izrisi()
 
     async def _ob_nalogi(self, n: dict) -> None:
-        prej = {o["id"] for o in (self.naloga or {}).get("obvestila", [])}
+        stara = self.naloga or {}
+        prej = {o["id"] for o in stara.get("obvestila", [])}
+        prej_sporocila = {m["id"] for m in stara.get("sporocila", [])}
+        prej_predlogi = {p["id"]: p["stanje"] for p in stara.get("predlogi", [])}
+        if (n.get("pot") or {}).get("izracunano") != (stara.get("pot") or {}).get("izracunano") and n.get("pot") and stara:
+            self._pot_cas = n["pot"]["izracunano"]
         self.naloga = n
+        if stara:
+            nova_sp = [m for m in n.get("sporocila", []) if m["smer"] == "od_dispecerja" and m["id"] not in prej_sporocila]
+            odloceni = [p for p in n.get("predlogi", []) if prej_predlogi.get(p["id"]) == "predlagano" and p["stanje"] != "predlagano"]
+            if nova_sp:
+                await self.naprava.opozori(t("sporocilo.novo"), nova_sp[0]["besedilo"], not self.v_ospredju)
+            for p in odloceni:
+                await self.naprava.opozori(t("predlog.odlocitev", tip=t("predlog." + p["tip"]), stanje=t("predlog." + p["stanje"])),
+                                           p.get("razlog") or "", not self.v_ospredju)
+        if self.v_ospredju:
+            for m in n.get("sporocila", []):
+                if m["smer"] == "od_dispecerja" and not m.get("prebrano"):
+                    self.page.run_task(self._oznaci_prebrano, m["id"])
         if self.naprava.simulacija:
             self.naprava.simulirana_pot((n.get("pot") or {}).get("geometrija"), n.get("enota"))
         nova = [o for o in n.get("obvestila", []) if o["id"] not in prej]
@@ -182,6 +210,78 @@ class AplikacijaVoznika:
             await self.naprava.opozori(t("obvestilo.sistemsko_naslov"), t("obvestilo.sistemsko_besedilo"), not self.v_ospredju)
         await self.naprava.zaslon_prizgan(bool(self._trenutni()) and self.v_ospredju)
         self._izrisi()
+
+    async def _oznaci_prebrano(self, sid: str) -> None:
+        with contextlib.suppress(Exception):
+            await self.odjemalec.prebrano(sid)
+
+    def _razdelek(self, ime: str | None):
+        async def preklopi(_=None):
+            self.razdelek = None if self.razdelek == ime else ime
+            self._potrjuje_okvaro = False
+            self._izrisi()
+        return preklopi
+
+    async def _hitro(self, e) -> None:
+        koda = e.control.data
+        await self._izvedi_sporocilo(lambda: self.odjemalec.sporocilo(koda=koda))
+
+    async def _besedilo(self, _=None) -> None:
+        b = (self.besedilo_sporocila.value or "").strip()
+        if not b or self._vozi():
+            return
+        await self._izvedi_sporocilo(lambda: self.odjemalec.sporocilo(besedilo=b))
+        self.besedilo_sporocila.value = ""
+
+    async def _izvedi_sporocilo(self, klic) -> None:
+        try:
+            s = await klic()
+            self.sporocilo.value = t("sporocilo.poslano", besedilo=s["besedilo"])
+        except Zavrnjeno as z:
+            self.sporocilo.value = t("stanje.napaka", napaka=str(z))
+        except NiPovezave:
+            self.sporocilo.value = t("stanje.ni_povezave")
+        except Odjavljen:
+            self._ob_odjavi()
+            return
+        if self.sinh:
+            await self.sinh.osvezi_nalogo()
+        self._izrisi()
+
+    async def _okvara(self, _=None) -> None:
+        if not self._potrjuje_okvaro:  # dva dotika: brez nenamerne prijave
+            self._potrjuje_okvaro = True
+            self._izrisi()
+            return
+        self._potrjuje_okvaro = False
+        await self._izvedi_predlog(lambda: self.odjemalec.okvara())
+
+    async def _ovira(self, e) -> None:
+        await self._izvedi_predlog(lambda: self.odjemalec.ovira(e.control.data))
+
+    async def _izvedi_predlog(self, klic) -> None:
+        if self.posiljalec:
+            self.posiljalec.zbudi()  # lokacija predloga je zadnji položaj na strežniku
+            with contextlib.suppress(Exception):
+                await self.posiljalec.poslji_vse(2)
+        try:
+            await klic()
+            self.sporocilo.value = t("tezava.poslano")
+            self.razdelek = None
+        except Zavrnjeno as z:
+            self.sporocilo.value = t("stanje.napaka", napaka=str(z))
+        except NiPovezave:
+            self.sporocilo.value = t("stanje.ni_povezave")
+        except Odjavljen:
+            self._ob_odjavi()
+            return
+        if self.sinh:
+            await self.sinh.osvezi_nalogo()
+        self._izrisi()
+
+    def _vozi(self) -> bool:
+        return bool(self.zadnji_fiks and (self.zadnji_fiks.get("hitrost") or 0) > PRAG_VOZNJE_MS
+                    and time.time() - self.zadnji_fiks["ts"] < 30)
 
     async def _zivljenje(self, e) -> None:
         self.v_ospredju = e.state in (ft.AppLifecycleState.RESUME, ft.AppLifecycleState.SHOW)
@@ -252,11 +352,15 @@ class AplikacijaVoznika:
         self.nav = ft.Column([])
         self.gumbi = ft.Column([])
         self.preostali = ft.Column([])
+        self.sporocila_disp = ft.Column([])
+        self.meni = ft.Column([])
+        self.predlogi = ft.Column([])
         self.g_odjava = ft.TextButton(content=t("odjava.gumb"), on_click=self._odjava)
         self.page.controls.clear()
         self.page.add(ft.SafeArea(content=ft.Column([
             self.t_enota, self.t_status, self.t_povezava,
-            self.opozorilo, self.korak, self.nav, self.gumbi, self.sporocilo, self.preostali,
+            self.opozorilo, self.sporocila_disp, self.korak, self.nav, self.gumbi, self.sporocilo, self.predlogi,
+            self.meni, self.preostali,
             ft.Row([self.g_odjava]),
         ], scroll=ft.ScrollMode.AUTO, expand=True), expand=True))
 
@@ -356,6 +460,59 @@ class AplikacijaVoznika:
             g = velik_gumb(napis, self._stanje, "stanje-" + st)
             g.data, g.disabled = st, self._delam
             self.gumbi.controls.append(ft.Row([g]))
+
+        for st in n.get("mogoci_predlogi", []):
+            g = velik_gumb(t("stanje.predlog." + st), self._stanje, "predlog-" + st)
+            g.data, g.disabled = st, self._delam
+            self.gumbi.controls.append(ft.Row([g]))
+        if self._pot_cas:
+            self.nav.controls.append(ft.Text(t("pot.posodobljena", ura=datetime.fromtimestamp(self._pot_cas).strftime("%H:%M"))))
+
+        # neprebrana / zadnja sporočila dispečerja (vedno vidna)
+        self.sporocila_disp.controls.clear()
+        for m in [m for m in n.get("sporocila", []) if m["smer"] == "od_dispecerja"][:2]:
+            self.sporocila_disp.controls.append(ft.Text(f"{datetime.fromtimestamp(m['cas']).strftime('%H:%M')} · "
+                                                        + t("sporocilo.od_dispecerja", besedilo=m["besedilo"])))
+
+        # stanje predlogov dispečerju
+        self.predlogi.controls.clear()
+        for p in (n.get("predlogi") or [])[-3:]:
+            vrstica = f"{t('predlog.' + p['tip'])}: {t('predlog.' + p['stanje'])}"
+            if p.get("razlog"):
+                vrstica += " · " + t("predlog.razlog", razlog=p["razlog"])
+            self.predlogi.controls.append(ft.Text(vrstica))
+        if self.predlogi.controls:
+            self.predlogi.controls.insert(0, ft.Text(t("predlog.naslov")))
+
+        # meni: sporočila / prijava težave (skrito, dokler voznik ne odpre -> manj motenj med vožnjo)
+        self.meni.controls.clear()
+        self.meni.controls.append(ft.Row([
+            velik_gumb(t("meni.zapri") if self.razdelek == "sporocila" else t("meni.sporocila"), self._razdelek("sporocila"), "meni-sporocila"),
+            velik_gumb(t("meni.zapri") if self.razdelek == "tezava" else t("meni.tezava"), self._razdelek("tezava"), "meni-tezava")]))
+        if self.razdelek == "sporocila":
+            for i in range(0, len(HITRA), 2):
+                vrsta = []
+                for koda in HITRA[i:i + 2]:
+                    g = velik_gumb(t("hitro." + koda), self._hitro, "hitro-" + koda)
+                    g.data = koda
+                    vrsta.append(g)
+                self.meni.controls.append(ft.Row(vrsta))
+            if self._vozi():
+                self.meni.controls.append(ft.Text(t("sporocilo.med_voznjo")))
+            else:
+                self.meni.controls.append(self.besedilo_sporocila)
+                self.meni.controls.append(ft.Row([velik_gumb(t("sporocilo.poslji"), self._besedilo, "poslji-besedilo")]))
+        elif self.razdelek == "tezava":
+            self.meni.controls.append(ft.Row([velik_gumb(t("tezava.okvara_potrdi") if self._potrjuje_okvaro else t("tezava.okvara"),
+                                                         self._okvara, "okvara")]))
+            self.meni.controls.append(ft.Text(t("tezava.ovira")))
+            for i in range(0, len(OVIRE), 2):
+                vrsta = []
+                for v in OVIRE[i:i + 2]:
+                    g = velik_gumb(t("ovira." + v), self._ovira, "ovira-" + v)
+                    g.data = v
+                    vrsta.append(g)
+                self.meni.controls.append(ft.Row(vrsta))
 
         # preostali koraki
         self.preostali.controls.clear()
