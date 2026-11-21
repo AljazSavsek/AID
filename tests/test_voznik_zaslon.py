@@ -1,4 +1,4 @@
-"""Sporočilo ekipe (zavarovano z žetonom voznika) -> predlog dogodka -> odločitev dispečerja.
+"""Spletni zaslon voznika in AI iz besedila ekipe (zavarovano z žetonom voznika).
 Spletni zaslon voznika uporablja isti API kot Flet aplikacija."""
 from urllib.parse import quote
 
@@ -29,33 +29,32 @@ def test_sporocilo_zahteva_prijavo(cl):
     assert cl.post("/voznik/sporocilo", json={"besedilo": "Vozilo je obstalo."}).status_code == 401
 
 
-def test_sporocilo_je_le_predlog(cl):
+def test_besedilo_ekipe_ai_predlog(cl):
+    """Specifikacija 9: »Vozilo je obstalo. Oprema je še v njem.« -> AI -> predlog okvare (čaka na dispečerja)."""
     h = prijava(cl)
     r = cl.post("/voznik/sporocilo", json={"besedilo": "Vozilo je obstalo. Oprema je še v njem."}, headers=h)
     assert r.status_code == 200 and brez_ponudnikov(r.text) == []
-    d = r.json()["predlogi_dogodkov"][0]
-    assert d["tip"] == "okvara_vozila" and d["stanje"] == "predlagano" and d["parametri"]["enota_id"] == "RV-1"
-    assert next(e for e in cl.get("/enote").json() if e["id"] == "RV-1")["stanje"] != "okvara"
-    assert [x["id"] for x in cl.get("/dogodki", params={"stanje": "predlagano"}).json()] == [d["id"]]
-    r = cl.post(f"/dogodek/{d['id']}/sprejmi").json()
-    assert r["dogodek"]["stanje"] == "sprejeto" and r["plan_predlog"]["stanje"] == "predlog"
+    assert r.json()["predlog_ai"]["tip"] == "okvara_vozila"
+    pr = [d for d in cl.get("/ekipe/predlogi").json() if d["tip"] == "okvara_vozila"]
+    assert len(pr) == 1 and pr[0]["stanje"] == "predlagano" and pr[0]["parametri"]["enota_id"] == "RV-1"
+    assert pr[0]["dokazi"] and pr[0]["zaupanje"]
+    assert next(e for e in cl.get("/enote").json() if e["id"] == "RV-1")["stanje"] != "okvara"  # brez potrditve nič
+    r = cl.post(f"/ekipe/predlog/{pr[0]['id']}/sprejmi").json()
     assert next(e for e in cl.get("/enote").json() if e["id"] == "RV-1")["stanje"] == "okvara"
-    assert cl.post(f"/dogodek/{d['id']}/zavrni").status_code == 409
     rev = {x["akcija"] for x in cl.get("/revizija", params={"omejitev": 1000}).json()}
-    assert {"sporocilo_ekipe", "predlog_ai", "uveljavi"} <= rev
+    assert {"sporocilo_voznika", "predlog_ai"} <= rev
 
 
-def test_enota_iz_zetona_ne_iz_telesa(cl):
-    h = prijava(cl, "RV-2", "DEMO-RV2")
-    d = cl.post("/voznik/sporocilo", json={"besedilo": "Vozilo je obstalo."}, headers=h).json()["predlogi_dogodkov"][0]
-    assert d["enota_posiljatelj"] == "RV-2" and d["parametri"]["enota_id"] == "RV-2"
-
-
-def test_zavrnjen_dogodek_nic_ne_spremeni(cl):
+def test_hitro_sporocilo_ne_gre_skozi_ai(cl):
     h = prijava(cl)
-    d = cl.post("/voznik/sporocilo", json={"besedilo": "Vozilo je obstalo."}, headers=h).json()["predlogi_dogodkov"][0]
-    assert cl.post(f"/dogodek/{d['id']}/zavrni", json={"razlog": "lažni alarm"}).json()["stanje"] == "zavrnjeno"
-    assert next(e for e in cl.get("/enote").json() if e["id"] == "RV-1")["stanje"] != "okvara"
+    r = cl.post("/voznik/sporocilo", json={"koda": "na_poti"}, headers=h).json()
+    assert "predlog_ai" not in r and cl.get("/ekipe/predlogi").json() == []
+
+
+def test_besedilo_brez_dogodka_je_le_sporocilo(cl):
+    h = prijava(cl, "RV-2", "DEMO-RV2")
+    r = cl.post("/voznik/sporocilo", json={"besedilo": "Na kraju bomo čez pet minut."}, headers=h).json()
+    assert r["predlog_ai"] is None and cl.get("/ekipe/predlogi").json() == []
 
 
 def test_naloga_voznika_ima_navodila_in_opozorila(cl):
@@ -75,3 +74,4 @@ def test_ime_s_sumniki_v_glavi(cl):
 def test_stari_nezavarovani_endpointi_ne_obstajajo(cl):
     assert cl.post("/enota/RV-1/lokacija", json={"lat": 46, "lon": 14}).status_code in (404, 405)
     assert cl.post("/sporocilo", json={"enota_id": "RV-1", "besedilo": "x"}).status_code in (404, 405)
+    assert cl.get("/voznik/RV-1").status_code in (401, 404, 405)

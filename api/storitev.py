@@ -27,6 +27,7 @@ from poslusalec.poslusalec import Poslusalec
 from usmerjanje.ponudniki import helikopter, zracna_ocena
 from usmerjanje.servis import UsmerjevalniServis
 from voznik.avtentikacija import Avtentikacija
+from voznik.ekipa import Ekipa
 from voznik.naloge import NalogeVoznikov
 from voznik.nastavitve import NastavitveVoznika
 from voznik.polozaji import Polozaji
@@ -94,6 +95,8 @@ class Center:
         self.polozaji = Polozaji(self.db, self.nast_voznika)
         self.po_potrditvi_plana: list = []
         self.naloge_voznikov = NalogeVoznikov(self, self.nast_voznika.rok_potrditve_s)
+        self.ekipa = Ekipa(self, self.naloge_voznikov)
+        self.naloge_voznikov.ekipa = self.ekipa
         self.nalozi_scenarij(scenarij or KOREN / "demo" / "scenarij.json")
 
     # ================= scenarij in stanje =================
@@ -522,7 +525,8 @@ class Center:
         return {"naloga": n, "plan_predlog": plan}
 
     # ================= dogodki in plan =================
-    async def uveljavi_dogodek(self, d: dict, uporabnik: str, zelena_enota: tuple | None = None) -> dict | None:
+    async def uveljavi_dogodek(self, d: dict, uporabnik: str, zelena_enota: tuple | None = None,
+                               planiraj: bool = True) -> dict | None:
         st = self.stanje()
         try:
             opis = D.uveljavi(st, d)
@@ -535,6 +539,8 @@ class Center:
         self.db.revizija(uporabnik, "Dogodek", d["id"], "uveljavi", None, {"tip": d["tip"], "parametri": d["parametri"], "opis": opis})
         self.objava.objavi("dogodek", d)
         self.objava.objavi("enote", self.enote())
+        if not planiraj:  # npr. ovira na cesti: ne vpliva na dodelitve
+            return None
         return await self.predlagaj_plan(f"{d['tip']}: {opis}", zelena_enota)
 
     def plan_aktiven(self) -> dict | None:

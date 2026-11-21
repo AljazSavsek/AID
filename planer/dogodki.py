@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 
+from dnevnik.model import VRSTE_OVIR
 from dnevnik.model import naloga as nova_naloga
 
 
@@ -90,5 +91,38 @@ def uveljavi(stanje: dict, dogodek: dict, zdaj: float | None = None) -> str:
         if nova < stara:  # višja nujnost -> ožje okno
             n["okno_do"] = min(n.get("okno_do") or zdaj + 3600, zdaj + {1: 15, 2: 30, 3: 60}.get(nova, 120) * 60)
         return f"{n['id']}: prioriteta {stara} → {nova}."
+
+    if tip == "ovira_na_cesti":
+        # informacija za dispečerja (in usmerjanje v fazi 2); model plana se ne spremeni
+        lok = p.get("lokacija") or {}
+        if p.get("vrsta") not in VRSTE_OVIR or lok.get("lat") is None or lok.get("lon") is None:
+            raise NeveljavenDogodek("ovira potrebuje vrsto in lokacijo")
+        return f"Ovira ({p['vrsta']}) pri {lok['lat']:.5f}, {lok['lon']:.5f}" + (f": {p['opis']}" if p.get("opis") else "") + "."
+
+    if tip == "prevoz_z_nujne_voznje":
+        # ekipa je na nujni vožnji naložila pacienta; dispečer izbere center
+        e = _enota(stanje, p.get("enota_id"))
+        n = _naloga(stanje, p.get("naloga_id"))
+        c = next((c for c in stanje["centri"] if c["id"] == p.get("center_id")), None)
+        if not c:
+            raise NeveljavenDogodek("izberite center (bolnišnico)")
+        if n.get("stanje") != "odprta":
+            raise NeveljavenDogodek(f"naloga {n['id']} ni več odprta")
+        if int(e.get("kapaciteta", {}).get("pacienti", 0)) < 1:
+            raise NeveljavenDogodek(f"{e['id']} ne more prevažati pacienta")
+        if any(t["naloga_id"] == n["id"] for t in e.get("tovor", [])):
+            raise NeveljavenDogodek("pacient je že v vozilu")
+        pacienti = max(1, int(p.get("pacienti") or 1))
+        n["dostava"] = {"lat": c["lat"], "lon": c["lon"], "naslov": c["ime"], "center_id": c["id"]}
+        n["kolicina"] = {**n.get("kolicina", {}), "pacienti": pacienti}
+        e.setdefault("tovor", []).append({"naloga_id": n["id"], "pacienti": pacienti, "oprema": 0})
+        return f"{n['id']}: pacient v {e['id']}, prevoz v {c['ime']}."
+
+    if tip == "enota_ni_na_voljo":
+        e = _enota(stanje, p.get("enota_id"))
+        if e.get("tovor"):
+            raise NeveljavenDogodek(f"{e['id']} ima tovor – najprej dostava")
+        e["stanje"] = "ni_na_voljo"
+        return f"{e['id']} ni na voljo" + (f" ({p['razlog']})" if p.get("razlog") else "") + "."
 
     raise NeveljavenDogodek(f"neznan tip: {tip}")
