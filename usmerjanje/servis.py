@@ -19,7 +19,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from .ponudniki import Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena
+from .ponudniki import Omejitev, Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena
 
 dnevnik = logging.getLogger("usmerjanje")
 
@@ -81,7 +81,10 @@ class UsmerjevalniServis:
     okno_predpomnilnika_s: int = 300
     ura: callable = time.time
 
+    vzporedno: int = 4
+
     def __post_init__(self):
+        self._mesta = None
         self.varovalke = {p.ime: Varovalka() for p in self.ponudniki}
         self._predpomnilnik: dict[tuple, Pot] = {}
         self.zdravje_stanje: dict[str, dict] = {}
@@ -89,6 +92,11 @@ class UsmerjevalniServis:
     # ---------- javni vmesnik ----------
     async def izracunaj(self, od, do, tip_enote: str = "vozilo") -> dict:
         return (await self._izracunaj(tuple(od), tuple(do), tip_enote)).javno()
+
+    def iz_predpomnilnika(self, od, do, tip_enote: str = "vozilo") -> dict | None:
+        """Samo že izračunani časi (brez klica ponudnika)."""
+        p = self._predpomnilnik.get(self._kljuc(tuple(od), tuple(do), tip_enote)) or self._iz_predpomnilnika_brez_okna(tuple(od), tuple(do), tip_enote)
+        return p.javno() if p else None
 
     async def matrika(self, izvori: list, cilji: list, tip_enote: str = "vozilo", vzporedno: int = 8) -> list[list[dict]]:
         sem = asyncio.Semaphore(vzporedno)
@@ -99,6 +107,15 @@ class UsmerjevalniServis:
 
         naloge = [[ena(a, b) for b in cilji] for a in izvori]
         return [list(await asyncio.gather(*vrsta)) for vrsta in naloge]
+
+    def javna_kakovost(self) -> str:
+        """Najboljša trenutno dosegljiva kakovost – brez imena ponudnika (za vmesnik)."""
+        zdaj = self.ura()
+        for p in self.ponudniki:
+            v = self.varovalke[p.ime]
+            if p.na_voljo() and (v.odprta_do == 0.0 or zdaj >= v.odprta_do):
+                return p.kakovost
+        return "ocena"
 
     def zdravje(self) -> dict:
         """SAMO za skrbnika (/interno/zdravje)."""
@@ -153,7 +170,12 @@ class UsmerjevalniServis:
         kljuc = self._kljuc(od, do, tip)
         if kljuc in self._predpomnilnik:
             return self._predpomnilnik[kljuc]
-        pot = await self._hedging(od, do, tip)
+        if self._mesta is None:
+            self._mesta = asyncio.Semaphore(self.vzporedno)
+        async with self._mesta:
+            if kljuc in self._predpomnilnik:  # medtem izračunal nekdo drug
+                return self._predpomnilnik[kljuc]
+            pot = await self._hedging(od, do, tip)
         if pot is None:
             star = self._iz_predpomnilnika_brez_okna(od, do, tip)
             if star is not None:
@@ -181,6 +203,9 @@ class UsmerjevalniServis:
             self.varovalke[p.ime].uspeh(self.ura())
             return pot
         except asyncio.CancelledError:
+            raise
+        except Omejitev as e:
+            dnevnik.warning("ponudnik %s: %s (ne šteje kot izpad)", p.ime, e)
             raise
         except Exception as e:  # noqa: BLE001
             if self.varovalke[p.ime].napaka(self.ura(), str(e)[:200]):

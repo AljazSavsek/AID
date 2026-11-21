@@ -260,7 +260,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     @app.get("/stanje")
     async def dogodki_od(od: int = 0):
         c = C()
-        return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo}
+        return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo,
+                "kakovost_poti": c.usmerjanje.javna_kakovost()}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):

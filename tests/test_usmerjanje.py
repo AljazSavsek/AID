@@ -120,3 +120,35 @@ def test_matrika():
 def test_zdravje_vsebuje_imena_samo_interno():
     s = servis(Lazen("tomtom"))
     assert "tomtom" in s.zdravje()
+
+
+def test_omejitev_hitrosti_ne_izklopi_ponudnika():
+    from usmerjanje.ponudniki import Omejitev
+
+    class Omejen(Lazen):
+        async def izracunaj(self, od, do, tip):
+            self.klici += 1
+            raise Omejitev("429")
+
+    a = Omejen("tomtom")
+    s = servis(a)
+    for i in range(6):
+        r = run(s.izracunaj((46 + i / 100, 14.5), DO))
+        assert r["kakovost"] == "ocena"
+    assert s.varovalke["tomtom"].stanje == "zaprta" and a.klici == 6
+
+
+def test_omejevalnik_razmakne_zahteve():
+    import time
+    from usmerjanje.ponudniki import Omejevalnik
+    om = Omejevalnik(hkrati=2, na_sekundo=10)
+
+    async def ena():
+        async with om:
+            return time.perf_counter()
+
+    async def vse():
+        return await asyncio.gather(*(ena() for _ in range(5)))
+
+    casi = sorted(run(vse()))
+    assert casi[-1] - casi[0] >= 0.35  # 5 zahtev pri 10/s
