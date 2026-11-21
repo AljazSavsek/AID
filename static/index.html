@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AID · Regijski center</title>
   <link rel="icon" href="img/aid-logo.svg">
+  <link rel="manifest" href="manifest-center.webmanifest">
+  <link rel="apple-touch-icon" href="img/ikona-center-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -181,5 +183,6 @@
 <script src="js/povezava.js"></script>
 <script src="js/klic.js"></script>
 <script src="js/plan.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

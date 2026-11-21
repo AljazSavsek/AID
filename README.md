@@ -2,8 +2,8 @@
 
 Prototip za AdaHack 2026 (Epilogov izziv). **AI predlaga, dispečer odloča.**
 
-Veja `voznik` vsebuje **oba dela skupaj**: regijski center (dispečer) in zaslon v reševalnem vozilu (voznik),
-ki si delita isti strežnik. Veja `regijski-center` vsebuje samo del za dispečerja.
+Veja `voznik` vsebuje **oba dela skupaj** na istem strežniku: regijski center (dispečer) in voznika
+(Flet aplikacija za telefon + spletni zaslon v vozilu). Veja `regijski-center` vsebuje samo del za dispečerja.
 
 | Zaslon | Naslov |
 |---|---|
@@ -16,23 +16,43 @@ Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremen
            Geokodiranje → Usmerjanje (skrito, redundantno) → Planer (OR-Tools) → Predlog plana → Dispečer
 ```
 
-## Zagon
+## Zagon – vse naenkrat
 
 ```bash
 pip install -r requirements.txt
 ```
 
 ```bash
-uvicorn api.app:app --port 8000
+pip install -r aplikacija_voznik/requirements-razvoj.txt
 ```
-
-Odprite <http://localhost:8000/> in kliknite **SPREJMI KLIC** – predvaja se demo klic (padec z lestve, Celovška cesta).
-Brez ključev sistem dela v celoti lokalno: AI poslušalec s pravili, geokodiranje iz lokalnega registra, časi prihoda kot ocena.
-
-Simulator klica kot zunanji odjemalec (namesto VoIP):
+(drugi ukaz le za Flet aplikacijo voznika)
 
 ```bash
-python -m zajem.simulator --url http://localhost:8000 --hitrost 1
+python zazeni.py
+```
+
+Na Windows lahko dvokliknete `zazeni.bat`, na Macu/Linuxu `./zazeni.sh`. En ukaz zažene **strežnik**, odpre
+**zaslon dispečerja** in **spletni zaslon voznika** ter zažene **Flet aplikacijo voznika** (simuliran GPS).
+Ustavite s `Ctrl+C`. Možnosti: `--brez-flet`, `--enota RV-3`, `--port 8000`, `--javno` (telefon v istem omrežju).
+
+| Zaslon | Naslov | Prijava |
+|---|---|---|
+| Regijski center (dispečer) | <http://localhost:8000/> | ime dispečerja v glavi |
+| Reševalno vozilo (splet) | <http://localhost:8000/voznik.html> | enota + koda, npr. `RV-3` / `DEMO-RV3` |
+| Aplikacija voznika (Flet) | okno ali <http://localhost:8550> | enota + koda |
+
+Ena enota = ena naprava: prijava iste enote v drugi aplikaciji odjavi prejšnjo. Za demo prijavite spletni zaslon in
+Flet aplikacijo z različnima voziloma. Oba spletna zaslona lahko v Chromu/Edgu namestite kot aplikacijo
+(ikona »Namesti« v naslovni vrstici).
+
+**Demo potek:** dispečer sprejme klic → potrdi naslov, lokacijo, prioriteto in enoto → ODOBRI IN POŠLJI → potrdi plan
+→ voznik predlagane enote dobi nalogo, potrdi prejem, sporoča stanja (PREJETO → NA POTI → NA KRAJU …), »Simuliraj vožnjo«
+→ »Sporočilo centru: Vozilo je obstalo« → dispečer v »Plan in karta → Sporočila ekip« potrdi → nov plan.
+
+Samo strežnik (brez odpiranja oken):
+
+```bash
+uvicorn api.app:app --port 8000
 ```
 
 Testi:
@@ -101,3 +121,40 @@ Voznik vidi **samo naloge iz potrjenega plana in podatke, ki jih je potrdil disp
 | `prepis/`, `zajem/` | STT z rezervo, simulator klica |
 | `static/` | vmesnik (HTML/JS + Leaflet, brez build koraka) |
 | `demo/` | scenarij (UKC, 4 vozila, 2 motorista, helikopter, 8 nalog), klic, register naslovov |
+
+## Voznik (veja `voznik`)
+
+Aplikacija voznika pošilja GPS in prejema naloge. API: `POST /voznik/prijava`, `/voznik/osvezi`, `/voznik/odjava`,
+`GET /voznik/jaz`, `POST /voznik/polozaj`. Demo kode enot so v `demo/scenarij.json` (`kode_voznikov`).
+Dispečer vidi žive položaje, starost in stanje »ni signala« v pogledu **Plan in karta**. Podrobnosti v [ODLOCITVE.md](ODLOCITVE.md) (#28–36).
+
+| Spremenljivka | Namen |
+|---|---|
+| `AID_VOZNIK_SKRIVNOST` | ključ za podpis žetonov voznikov (brez nje: nov ob vsakem zagonu) |
+| `AID_VOZNIK_DOSTOP_S`, `AID_VOZNIK_OSVEZITEV_S` | trajanje žetonov (900 s, 12 h) |
+| `AID_VOZNIK_DEMO_KODE=0` | ne naloži demo kod iz scenarija |
+| `AID_GPS_AKTIVNO_FIKS_S`, `AID_GPS_AKTIVNO_POSILJANJE_S`, `AID_GPS_PROSTO_FIKS_S`, `AID_GPS_PROSTO_POSILJANJE_S`, `AID_GPS_BATERIJA_POSILJANJE_S` | frekvence GPS |
+| `AID_SIGNAL_ZAKASNJENO_S`, `AID_SIGNAL_BREZ_S` | pragova signala na nalogi (30 s, 60 s) |
+| `AID_POLOZAJ_HRANJENJE_DNI`, `AID_GPS_DOVOLI_LAZNO` | hramba zgodovine (30), sprejem lažnih položajev |
+
+### Aplikacija voznika (`aplikacija_voznik/`, Flet)
+
+Razvoj na računalniku (simuliran GPS vozi po potrjeni poti):
+
+```bash
+pip install -r aplikacija_voznik/requirements-razvoj.txt
+```
+
+```bash
+cd aplikacija_voznik && AID_STREZNIK=http://localhost:8000 AID_VOZNIK_SIMULACIJA=1 python main.py --splet
+```
+
+Prijava: enota `RV-1`, koda `DEMO-RV1`. Telefon (Android): `flet build apk`, nato preizkus po
+[aplikacija_voznik/PREIZKUS_NAPRAVE.md](aplikacija_voznik/PREIZKUS_NAPRAVE.md).
+
+| Endpoint | Namen |
+|---|---|
+| `GET /voznik/naloga` | koraki aktivnega plana, potrjeni podatki, pot trenutnega koraka, dovoljena stanja, odprta obvestila |
+| `POST /voznik/stanje` | prejeto, na_poti, na_prizoriscu, pacient_nalozen, dostavljeno, opravljeno, prosto, ni_na_voljo |
+| `POST /voznik/potrdi` | potrditev prejema plana |
+| `WS /ws/voznik`, `GET /voznik/dogodki` | spremembe za napravo (prvo sporočilo: `{"zeton": …}`) |

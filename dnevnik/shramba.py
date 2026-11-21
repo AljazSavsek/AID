@@ -65,6 +65,28 @@ class Shramba:
         with self._lock:
             self._db.execute("DELETE FROM objekti WHERE tip=? AND id=?", (tip, obj_id))
 
+    # ---------- lastne tabele modulov (npr. voznik/) ----------
+    def skripta(self, sql: str) -> None:
+        with self._lock:
+            self._db.executescript(sql)
+
+    def izvedi(self, sql: str, parametri: tuple | list = ()) -> list[dict]:
+        with self._lock:
+            return [dict(r) for r in self._db.execute(sql, parametri).fetchall()]
+
+    def izvedi_vec(self, sql: str, vrstice: list) -> list[bool]:
+        """Vsako vrstico posebej v eni transakciji; vrne, katere so kaj spremenile
+        (npr. INSERT OR IGNORE -> False za podvojene)."""
+        with self._lock:
+            self._db.execute("BEGIN")
+            try:
+                izid = [self._db.execute(sql, v).rowcount > 0 for v in vrstice]
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+            return izid
+
     # ---------- revizija ----------
     def revizija(self, uporabnik: str, objekt: str, objekt_id: str, akcija: str,
                  stara=None, nova=None) -> dict:
