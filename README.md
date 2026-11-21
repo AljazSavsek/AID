@@ -137,6 +137,34 @@ Dispečer vidi žive položaje, starost in stanje »ni signala« v pogledu **Pla
 | `AID_SIGNAL_ZAKASNJENO_S`, `AID_SIGNAL_BREZ_S` | pragova signala na nalogi (30 s, 60 s) |
 | `AID_POLOZAJ_HRANJENJE_DNI`, `AID_GPS_DOVOLI_LAZNO` | hramba zgodovine (30), sprejem lažnih položajev |
 
+### Simulator vozil (brez telefona)
+
+```bash
+python -m zajem.vozilo_sim --url http://localhost:8000 --enote RV-1,RV-4
+```
+
+Vsako vozilo se prijavi z demo kodo, potrdi prejem plana, vozi po potrjeni poti in sporoča stanja do »opravljeno«;
+dispečer vidi premike, stanja in potrditve. Uporablja isto jedro kot aplikacija voznika. Možnosti: `--pospesek 3`,
+`--izpad 30:45` (45 s brez omrežja po 30 s – fiksi čakajo v vrsti in se nato pošljejo z izvirnimi časi),
+`--ne-potrdi RV-4` (eskalacija), `--prevoz` (predlog prevoza z nujne vožnje), `--do-prostega`.
+Skupaj z ostalim: `python zazeni.py --vozila RV-1,RV-4`. Simulirane enote ne prijavljajte še drugje (ena enota = ena naprava).
+
+**Celoten krog:** dispečer sprejme klic in ODOBRI IN POŠLJI → potrdi plan → simulirano vozilo potrdi prejem → vozi →
+na prizorišču → opravljeno (ali pacient naložen → dostava).
+
+### Zasebnost položajev
+
+| | |
+|---|---|
+| Namen | nadzor in razporejanje reševalnih enot med izmeno |
+| Kdaj se zbira | samo med prijavo naprave enote; po odjavi nikoli (neposlani fiksi se zavržejo) |
+| Kaj | enota, naprava (naključni id), čas, lat/lon, hitrost, smer, natančnost |
+| Kdo vidi | dispečer: trenutni položaj in starost; zgodovino samo skrbnik (`GET /interno/polozaji/{id}`, vsak vpogled v reviziji) |
+| Hramba | `AID_POLOZAJ_HRANJENJE_DNI` (privzeto 30) za položaje in sporočila; seje 1 dan po poteku |
+| Zaščita | žeton samo za lastno enoto, omejevanje zahtevkov, revizija vseh dejanj voznika, ključi ponudnikov ostanejo na strežniku |
+
+Pravno presojo (GDPR, ZVOP-2, rok hrambe) mora opraviti naročnik.
+
 ### Aplikacija voznika (`aplikacija_voznik/`, Flet)
 
 Razvoj na računalniku (simuliran GPS vozi po potrjeni poti):
@@ -160,6 +188,7 @@ Prijava: enota `RV-1`, koda `DEMO-RV1`. Telefon (Android): `flet build apk`, nat
 | `WS /ws/voznik`, `GET /voznik/dogodki` | spremembe za napravo (prvo sporočilo: `{"zeton": …}`) |
 | `POST /voznik/sporocilo`, `/voznik/sporocilo/{id}/prebrano` | sporočila ekipe (hitra ali besedilo) |
 | `POST /voznik/okvara`, `POST /voznik/ovira` | predloga ekipe (dispečer ju potrdi) |
+| `POST /enote/{id}/koda`, `POST /enote/{id}/odjavi-voznika` | skrbnik (`X-Skrbnik-Zeton`): nova koda, preklic sej |
 
 Dispečer (razdelek **Ekipe**): `GET /ekipe/predlogi`, `POST /ekipe/predlog/{id}/{sprejmi\|spremeni\|zavrni}`,
 `GET /ekipe/eskalacije`, `GET /ekipe/sporocila`, `POST /enote/{id}/sporocilo`, `GET /ovire`.

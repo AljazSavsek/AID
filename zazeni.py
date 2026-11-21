@@ -3,6 +3,7 @@
     python zazeni.py                 # vse (Flet aplikacija, če je nameščena)
     python zazeni.py --brez-flet     # samo strežnik + oba spletna zaslona
     python zazeni.py --enota RV-3    # zaslon voznika za drugo vozilo
+    python zazeni.py --vozila RV-1,RV-4   # + simulator vozil (vozita po potrjeni poti, brez telefona)
 
 Ustavi se s Ctrl+C (ustavi tudi vse podrejene procese).
 """
@@ -55,6 +56,8 @@ def main() -> int:
     ap.add_argument("--flet-port", type=int, default=8550, help="vrata Flet aplikacije v brskalniku (brez namiznega okna)")
     ap.add_argument("--brez-brskalnika", action="store_true", help="ne odpiraj zaslonov v brskalniku")
     ap.add_argument("--javno", action="store_true", help="poslušaj na vseh vmesnikih (telefon v istem omrežju)")
+    ap.add_argument("--vozila", default="", help="simulirana vozila, npr. RV-1,RV-4 (zajem/vozilo_sim.py)")
+    ap.add_argument("--pospesek", type=float, default=3.0, help="pospešek simulatorja vozil")
     a = ap.parse_args()
 
     host = "0.0.0.0" if a.javno else "127.0.0.1"
@@ -97,6 +100,14 @@ def main() -> int:
     elif not a.brez_flet:
         print("ℹ Flet ni nameščen – aplikacijo voznika namestite s: pip install -r aplikacija_voznik/requirements-razvoj.txt")
 
+    sim = [e.strip().upper() for e in a.vozila.split(",") if e.strip()]
+    if a.enota.upper() in sim:
+        print(f"ℹ {a.enota} vozi simulator – za spletni zaslon voznika izberite drugo enoto (--enota).")
+    if sim:
+        print("▶ Zaganjam simulator vozil: " + ", ".join(sim))
+        procesi.append(subprocess.Popen([sys.executable, "-m", "zajem.vozilo_sim", "--url", url, "--enote", ",".join(sim),
+                                         "--pospesek", str(a.pospesek)], cwd=KOREN))
+
     kode = demo_kode()
     print("\n" + "═" * 64)
     print("  AID teče. Odprite:")
@@ -106,6 +117,8 @@ def main() -> int:
         print(f"  • Aplikacija voznika (Flet):   {flet_url}")
     elif len(procesi) > 1:
         print("  • Aplikacija voznika (Flet):   v ločenem oknu")
+    if sim:
+        print("  • Simulirana vozila:          " + ", ".join(sim) + " (ena enota = ena naprava: ne prijavljajte jih drugje)")
     if kode:
         print("  Demo kode vozil: " + ", ".join(f"{k}={v}" for k, v in kode.items()))
     print("  Ustavite s Ctrl+C.")

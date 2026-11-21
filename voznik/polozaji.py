@@ -34,6 +34,28 @@ CREATE TABLE IF NOT EXISTS polozaj_enote (
 SIGNALI = ("v_zivo", "zakasnjeno", "ni_signala", "brez_gps")
 
 
+def _koncno(x) -> bool:
+    return isinstance(x, (int, float)) and x == x and abs(x) != float("inf")
+
+
+def _neveljaven(f: dict) -> str | None:
+    """Neveljaven položaj ali čas -> fiks se zavrne (z razlogom), ostali iz paketa ostanejo."""
+    if not (_koncno(f.get("lat")) and -90 <= f["lat"] <= 90 and _koncno(f.get("lon")) and -180 <= f["lon"] <= 180):
+        return "neveljaven položaj"
+    if not (_koncno(f.get("ts")) and f["ts"] > 0):
+        return "neveljaven čas"
+    return None
+
+
+def _ocisti_neobvezna(f: dict) -> dict:
+    """Neveljavna neobvezna polja (hitrost, smer, natančnost) se izbrišejo, položaj ostane."""
+    f = dict(f)
+    for polje, lo, hi in (("hitrost", 0, 200), ("smer", 0, 360), ("natancnost", 0, 100000)):
+        if f.get(polje) is not None and not (_koncno(f[polje]) and lo <= f[polje] <= hi):
+            f[polje] = None
+    return f
+
+
 class Polozaji:
     def __init__(self, db: Shramba, nast: NastavitveVoznika | None = None, ura=time.time):
         self.db, self.nast, self.ura = db, nast or NastavitveVoznika(), ura
@@ -56,6 +78,11 @@ class Polozaji:
         meja_preteklost = zdaj - self.nast.hranjenje_dni * 86400
         vrstice, zavrnjeni = [], []
         for f in sorted(fiksi, key=lambda f: f["seq"]):
+            razlog = _neveljaven(f)
+            if razlog:
+                zavrnjeni.append({"seq": f["seq"], "razlog": razlog})
+                continue
+            f = _ocisti_neobvezna(f)
             ts = f["ts"] + popravek
             if ts > zdaj + self.nast.prihodnost_s:
                 zavrnjeni.append({"seq": f["seq"], "razlog": "čas v prihodnosti"})
@@ -164,6 +191,9 @@ class Polozaji:
         return out
 
     # ---------- hramba ----------
+    def meja_hrambe(self) -> float:
+        return self.ura() - self.nast.hranjenje_dni * 86400
+
     def pocisti(self) -> int:
         meja = self.ura() - self.nast.hranjenje_dni * 86400
         n = self.db.izvedi("SELECT COUNT(*) AS n FROM polozaj WHERE ts < ?", (meja,))[0]["n"]
