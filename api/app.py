@@ -144,6 +144,9 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
             nastavi_dnevnik(os.environ.get("AID_USMERJANJE_LOG", str(KOREN / "usmerjanje.log")))
             stanje["center"] = Center(Shramba(os.environ.get("AID_DB", KOREN / "podatki" / "aid.sqlite")))
         c: Center = stanje["center"]
+        if not os.environ.get("AID_VOZNIK_SKRIVNOST"):
+            logging.getLogger("voznik").warning("AID_VOZNIK_SKRIVNOST ni nastavljen – žetoni voznikov ne preživijo ponovnega "
+                                                "zagona (vozniki se morajo prijaviti znova). Za pravo uporabo ga nastavite.")
         if not c.plan_aktiven():
             p = await c.predlagaj_plan("začetni plan izmene")
             if p:
@@ -167,8 +170,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         while True:
             with contextlib.suppress(Exception):
                 n = await asyncio.to_thread(c.polozaji.pocisti)
-                if n:
-                    logging.getLogger("voznik").info("hramba: izbrisanih %d starih položajev", n)
+                m = c.ekipa.pocisti(c.polozaji.meja_hrambe())
+                s = c.avtentikacija.pocisti()
+                if n or m or s:
+                    logging.getLogger("voznik").info("hramba: izbrisanih %d položajev, %d sporočil, %d sej", n, m, s)
             await asyncio.sleep(3600)
 
     async def _izvoz(c: Center):

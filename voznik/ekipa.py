@@ -124,6 +124,12 @@ class Ekipa:
             self.c.objava.objavi("sporocilo_prebrano", {"id": sporocilo_id, "enota_id": enota_id, "prebrano": zdaj})
         return {"id": sporocilo_id, "prebrano": True}
 
+    def pocisti(self, meja: float) -> int:
+        """Hramba: sporočila starejša od meje (isti rok kot položaji) se izbrišejo."""
+        n = self.db.izvedi("SELECT COUNT(*) AS n FROM sporocilo WHERE cas < ?", (meja,))[0]["n"]
+        self.db.izvedi("DELETE FROM sporocilo WHERE cas < ?", (meja,))
+        return n
+
     def za_voznika(self, enota_id: str) -> list[dict]:
         """Za napravo: zadnjih 10 sporočil dispečerja (lastna hitra sporočila jih ne izrinejo) + 5 lastnih."""
         disp = self.db.izvedi("SELECT * FROM sporocilo WHERE enota_id=? AND smer='od_dispecerja' ORDER BY cas DESC LIMIT 10", (enota_id,))

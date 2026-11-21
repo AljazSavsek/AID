@@ -180,6 +180,14 @@ class Avtentikacija:
         self._preklici(seja_id, "odjava")
         self.db.revizija(f"voznik {enota_id}", "Enota", enota_id, "odjava_voznika", None, {"seja": seja_id})
 
+    def pocisti(self, starejse_od_s: float = 86400) -> int:
+        """Potekle in preklicane seje starejše od dneva (zgodovina prijav ostane v reviziji)."""
+        meja = self.ura() - starejse_od_s
+        vr = self.db.izvedi("SELECT COUNT(*) AS n FROM voznik_seja WHERE potece < ? OR (preklicano IS NOT NULL AND preklicano < ?)",
+                            (meja, meja))[0]["n"]
+        self.db.izvedi("DELETE FROM voznik_seja WHERE potece < ? OR (preklicano IS NOT NULL AND preklicano < ?)", (meja, meja))
+        return vr
+
     def prijavljena(self) -> set[str]:
         zdaj = self.ura()
         return {r["enota_id"] for r in self.db.izvedi(

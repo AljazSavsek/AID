@@ -132,12 +132,16 @@ def test_skrbnik_izda_kodo(cl):
 def test_preverjanje_vhoda(cl):
     z = prijava(cl)
     t = time.time()
-    assert poslji(cl, z, [fiks(1, t, lat=100)]).status_code == 422
-    assert poslji(cl, z, [fiks(1, t, hitrost=-1)]).status_code == 422
+    # slab fiks ne zavrne celega paketa: zavrne se le on (z razlogom), ostali ostanejo
+    r = poslji(cl, z, [fiks(1, t, lat=100), fiks(2, t, lat=46.07)]).json()
+    assert r["zavrnjeni"] == [{"seq": 1, "razlog": "neveljaven položaj"}] and r["novi"] == 1 and r["potrjeno_do_seq"] == 2
+    r = poslji(cl, z, [fiks(3, t + 0.5, lat=46.07, hitrost=-1, smer=999)]).json()
+    assert r["novi"] == 1 and cl.center.polozaji.trenutni("RV-2")["hitrost"] is None
+    assert poslji(cl, z, [{"seq": 4, "ts": t, "lat": "x", "lon": 14}]).status_code == 422  # napačen tip
     assert poslji(cl, z, [fiks(i, t) for i in range(201)]).status_code == 422
     assert poslji(cl, z, []).status_code == 422
-    r = poslji(cl, z, [fiks(1, t + 3600)]).json()  # čas v prihodnosti
-    assert r["zavrnjeni"][0]["razlog"] == "čas v prihodnosti" and r["potrjeno_do_seq"] == 1
+    r = poslji(cl, z, [fiks(9, t + 3600)]).json()  # čas v prihodnosti
+    assert r["zavrnjeni"][0]["razlog"] == "čas v prihodnosti" and r["potrjeno_do_seq"] == 9
 
 
 # ---------- idempotenca in vrstni red ----------
@@ -291,3 +295,35 @@ def test_frekvence_glede_na_baterijo():
     assert n.frekvence(True, {"nivo": 5})["nacin"] == "aktivno"
     assert n.frekvence(False, {"nivo": 5, "polni": False})["nacin"] == "varcno"
     assert n.frekvence(False, {"nivo": 5, "polni": True})["nacin"] == "prosto"
+
+
+def test_skrbnik_odjavi_izgubljen_telefon(cl):
+    z = prijava(cl)
+    assert cl.post("/enote/RV-2/odjavi-voznika").status_code == 403
+    r = cl.post("/enote/RV-2/odjavi-voznika", headers={"X-Skrbnik-Zeton": "skrbnik-test"}).json()
+    assert r["preklicanih"] == 1 and poslji(cl, z, [fiks(1, time.time())]).status_code == 401
+    assert any(x["akcija"] == "odjava_voznika_skrbnik" for x in cl.center.db.revizije("RV-2"))
+
+
+def test_hramba_sporocil_in_sej(cl):
+    c = cl.center
+    z = prijava(cl)
+    c.ekipa.od_voznika("RV-2", "zamuda", None)
+    cl.post("/voznik/odjava", headers=glava(z))
+    pozneje = time.time() + c.nast_voznika.hranjenje_dni * 86400 + 10
+    assert c.ekipa.pocisti(pozneje - c.nast_voznika.hranjenje_dni * 86400) == 1
+    c.avtentikacija.ura = lambda: pozneje
+    assert c.avtentikacija.pocisti() >= 1 and c.ekipa.sporocila("RV-2") == []
+
+
+def test_ws_omejitev_povezav(cl):
+    import contextlib
+    z = prijava(cl)
+    with contextlib.ExitStack() as sklad:
+        for _ in range(3):
+            ws = sklad.enter_context(cl.websocket_connect("/ws/voznik"))
+            ws.send_json({"zeton": z["dostop"]})
+            assert ws.receive_json()["tip"] == "pozdrav"
+        with cl.websocket_connect("/ws/voznik") as ws:
+            ws.send_json({"zeton": z["dostop"]})
+            assert ws.receive_json()["podatki"]["napaka"] == "preveč povezav za enoto"

@@ -33,13 +33,15 @@ class Osvezitev(BaseModel):
 
 
 class Fiks(BaseModel):
+    """Oblika (tipi) se preveri tu; VREDNOSTI posameznega fiksa preveri Polozaji.sprejmi, da en slab fiks
+    ne zavrne celega paketa (naprava bi sicer zavrgla tudi veljavne fikse)."""
     seq: int = Field(ge=0, le=2 ** 53)
-    ts: float = Field(gt=0)                       # čas fiksa na napravi (unix s)
-    lat: float = Field(ge=-90, le=90)
-    lon: float = Field(ge=-180, le=180)
-    hitrost: float | None = Field(default=None, ge=0, le=200)        # m/s
-    smer: float | None = Field(default=None, ge=0, le=360)           # stopinje
-    natancnost: float | None = Field(default=None, ge=0, le=100000)  # m
+    ts: float                                     # čas fiksa na napravi (unix s)
+    lat: float
+    lon: float
+    hitrost: float | None = None                  # m/s
+    smer: float | None = None                     # stopinje
+    natancnost: float | None = None               # m
     lazno: bool = False
 
 
@@ -238,6 +240,11 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
                 await sock.close(code=4401)
             return
         o = c.naloge_voznikov.objava
+        if len(o.narocniki.get(v["enota"], ())) >= 3:  # ena naprava na enoto (+ rezerva za ponovni priklop)
+            with contextlib.suppress(Exception):
+                await sock.send_json({"tip": "napaka", "podatki": {"napaka": "preveč povezav za enoto"}})
+                await sock.close(code=4429)
+            return
         q: asyncio.Queue = asyncio.Queue(maxsize=200)
         o.narocniki.setdefault(v["enota"], set()).add(q)
         try:
@@ -303,6 +310,18 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
         koda = c.avtentikacija.izdaj_kodo(enota_id, (x_uporabnik or "skrbnik").strip()[:60])
         c.objava.objavi("voznik_prijava", {"enota_id": enota_id, "prijavljen": False})
         return {"enota_id": enota_id, "koda": koda}
+
+    @r.post("/enote/{enota_id}/odjavi-voznika")
+    async def odjavi_voznika(enota_id: str, x_uporabnik: str | None = Header(default=None), _=Depends(preveri_skrbnika)):
+        """Izgubljen telefon: takoj prekliče vse seje enote (stara koda še velja; novo izda /koda)."""
+        c = C()
+        if not c.db.beri("enota", enota_id):
+            raise HTTPException(404, "enota ne obstaja")
+        preklicane = c.avtentikacija.preklici_enoto(enota_id, "odjava s strani skrbnika")
+        c.db.revizija((x_uporabnik or "skrbnik").strip()[:60], "Enota", enota_id, "odjava_voznika_skrbnik", None,
+                      {"seje": len(preklicane)})
+        c.objava.objavi("voznik_prijava", {"enota_id": enota_id, "prijavljen": False})
+        return {"enota_id": enota_id, "preklicanih": len(preklicane)}
 
     @r.get("/interno/polozaji/{enota_id}")
     async def zgodovina(enota_id: str, od: float | None = None, do: float | None = None,
