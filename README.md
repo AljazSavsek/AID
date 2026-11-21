@@ -83,3 +83,18 @@ dogodkov (okvara, megla, zmogljivost centra, prioriteta).
 | `prepis/`, `zajem/` | STT z rezervo, simulator klica |
 | `static/` | vmesnik (HTML/JS + Leaflet, brez build koraka) |
 | `demo/` | scenarij (UKC, 4 vozila, 2 motorista, helikopter, 8 nalog), klic, register naslovov |
+
+## Voznik (veja `voznik`)
+
+Aplikacija voznika pošilja GPS in prejema naloge. API: `POST /voznik/prijava`, `/voznik/osvezi`, `/voznik/odjava`,
+`GET /voznik/jaz`, `POST /voznik/polozaj`. Demo kode enot so v `demo/scenarij.json` (`kode_voznikov`).
+Dispečer vidi žive položaje, starost in stanje »ni signala« v pogledu **Plan in karta**. Podrobnosti v [ODLOCITVE.md](ODLOCITVE.md) (#28–36).
+
+| Spremenljivka | Namen |
+|---|---|
+| `AID_VOZNIK_SKRIVNOST` | ključ za podpis žetonov voznikov (brez nje: nov ob vsakem zagonu) |
+| `AID_VOZNIK_DOSTOP_S`, `AID_VOZNIK_OSVEZITEV_S` | trajanje žetonov (900 s, 12 h) |
+| `AID_VOZNIK_DEMO_KODE=0` | ne naloži demo kod iz scenarija |
+| `AID_GPS_AKTIVNO_FIKS_S`, `AID_GPS_AKTIVNO_POSILJANJE_S`, `AID_GPS_PROSTO_FIKS_S`, `AID_GPS_PROSTO_POSILJANJE_S`, `AID_GPS_BATERIJA_POSILJANJE_S` | frekvence GPS |
+| `AID_SIGNAL_ZAKASNJENO_S`, `AID_SIGNAL_BREZ_S` | pragova signala na nalogi (30 s, 60 s) |
+| `AID_POLOZAJ_HRANJENJE_DNI`, `AID_GPS_DOVOLI_LAZNO` | hramba zgodovine (30), sprejem lažnih položajev |

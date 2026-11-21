@@ -11,6 +11,7 @@ import contextlib
 import hmac
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,8 @@ from pydantic import BaseModel, Field
 from dnevnik.shramba import Shramba
 from karta.ploscice import NiNaVoljo, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
+from voznik.avtentikacija import NapakaPrijave
+from voznik.vmesnik import ustvari_usmerjevalnik
 from zajem.simulator import nalozi_klic, predvajaj
 
 from .storitev import Center, NapakaStoritve
@@ -86,6 +89,12 @@ def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
     return (x_uporabnik or "dispečer").strip()[:60]
 
 
+def preveri_skrbnika(x_skrbnik_zeton: str | None = Header(default=None)) -> None:
+    zeton = os.environ.get("AID_SKRBNIK_ZETON")
+    if not zeton or not x_skrbnik_zeton or not hmac.compare_digest(zeton, x_skrbnik_zeton):
+        raise HTTPException(403, "samo za skrbnika")
+
+
 def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     stanje: dict = {"center": center}
 
@@ -110,7 +119,24 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
                 c.potrdi_plan(p["id"], "sistem (začetek izmene)")
         if ozadje:
             stanje["naloge"] = [asyncio.ensure_future(c.usmerjanje.zanka_zdravja(30)),
-                                asyncio.ensure_future(_izvoz(c))]
+                                asyncio.ensure_future(_izvoz(c)),
+                                asyncio.ensure_future(_signal(c)),
+                                asyncio.ensure_future(_ciscenje(c))]
+
+    async def _signal(c: Center):
+        """Nadzor signala: prehod v_zivo / zakasnjeno / ni_signala -> `enota_signal` za dispečerja."""
+        while True:
+            with contextlib.suppress(Exception):
+                objavi_signale(c)
+            await asyncio.sleep(2)
+
+    async def _ciscenje(c: Center):
+        while True:
+            with contextlib.suppress(Exception):
+                n = await asyncio.to_thread(c.polozaji.pocisti)
+                if n:
+                    logging.getLogger("voznik").info("hramba: izbrisanih %d starih položajev", n)
+            await asyncio.sleep(3600)
 
     async def _izvoz(c: Center):
         pot = Path(os.environ.get("AID_IZVOZ", KOREN / "podatki" / "izvoz.json"))
@@ -125,6 +151,13 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     @app.exception_handler(NapakaStoritve)
     async def napaka(_: Request, e: NapakaStoritve):
         return JSONResponse({"napaka": str(e)}, status_code=e.koda)
+
+    @app.exception_handler(NapakaPrijave)
+    async def napaka_prijave(_: Request, e: NapakaPrijave):
+        return JSONResponse({"napaka": str(e)}, status_code=e.koda,
+                            headers={"WWW-Authenticate": "Bearer"} if e.koda == 401 else None)
+
+    app.include_router(ustvari_usmerjevalnik(C, preveri_skrbnika))
 
     # ---------- klic ----------
     @app.get("/cakajoci")
@@ -216,7 +249,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     # ---------- viri ----------
     @app.get("/enote")
     async def enote():
-        return C().db.vsi("enota")
+        return C().enote()
 
     @app.get("/centri")
     async def centri():
@@ -238,7 +271,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     @app.get("/stanje")
     async def dogodki_od(od: int = 0):
         c = C()
-        return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo}
+        # položaji niso v zgodovini dogodkov (enota_premik je samo WS) -> posnetek za polling
+        polozaji = [{"enota_id": e["id"], "lat": e["lat"], "lon": e["lon"], **e["polozaj"]} for e in c.enote()]
+        return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo,
+                "cas": time.time(), "polozaji": polozaji}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
@@ -259,10 +295,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
 
     # ---------- skrbnik ----------
     @app.get("/interno/zdravje")
-    async def zdravje(x_skrbnik_zeton: str | None = Header(default=None)):
-        zeton = os.environ.get("AID_SKRBNIK_ZETON")
-        if not zeton or not x_skrbnik_zeton or not hmac.compare_digest(zeton, x_skrbnik_zeton):
-            raise HTTPException(403, "samo za skrbnika")
+    async def zdravje(_=Depends(preveri_skrbnika)):
         c = C()
         return {"usmerjanje": c.usmerjanje.zdravje(), "poslusalec_zadnji_vir": c.poslusalec.zadnji_vir,
                 "ai_na_voljo": c.ai_na_voljo, "ws_narocniki": len(c.objava.narocniki)}
@@ -318,6 +351,16 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
 
     app.mount("/", StaticFiles(directory=staticno), name="static")
     return app
+
+
+def objavi_signale(c: Center, zdaj: float | None = None) -> list[dict]:
+    spremembe = c.polozaji.spremembe_signala(c.db.vsi("enota"), zdaj)
+    for s in spremembe:
+        c.objava.objavi("enota_signal", s)
+        if s["signal"] == "ni_signala":
+            c.objava.objavi("opozorilo", {"vrsta": "signal", "enota_id": s["enota_id"],
+                                          "sporocilo": f"{s['enota_id']}: ni signala GPS – prikazan je zadnji znani položaj."})
+    return spremembe
 
 
 app = ustvari_app()
