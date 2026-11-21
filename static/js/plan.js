@@ -21,7 +21,21 @@
   function zacniKarto() {
     if (!window.L || karta) return;
     karta = L.map("karta", { zoomControl: true }).setView([46.056, 14.505], 12);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+    AID.podlagaKarte(karta, { promet: true }).then(({ promet }) => {
+      if (!promet) return;
+      // stikalo »Promet« (zastoji in nesreče) – privzeto vklopljeno
+      promet.addTo(karta);
+      const Stikalo = L.Control.extend({
+        onAdd() {
+          const d = L.DomUtil.create("label", "stikalo-promet");
+          d.innerHTML = '<input type="checkbox" checked> Promet';
+          L.DomEvent.disableClickPropagation(d);
+          d.querySelector("input").onchange = (e) => (e.target.checked ? promet.addTo(karta) : karta.removeLayer(promet));
+          return d;
+        },
+      });
+      new Stikalo({ position: "topright" }).addTo(karta);
+    });
     ["centri", "naloge", "aktiven", "predlog", "enote"].forEach((k) => (sloji[k] = L.layerGroup().addTo(karta)));
   }
   const ikonaEnote = (e) => L.divIcon({

@@ -7,7 +7,7 @@ os.environ["AID_BREZ_ENV"] = "1"            # testi ne berejo lokalne .env
 os.environ["AID_NOMINATIM"] = "0"          # testi ne smejo klicati interneta
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("OLLAMA_URL", None)
-for k in ("TOMTOM_API_KEY", "ORS_API_KEY", "OSRM_URL", "GURS_GEOKODER_URL"):
+for k in ("TOMTOM_API_KEY", "TOMTOM_MAP_KEY", "ORS_API_KEY", "OSRM_URL", "GURS_GEOKODER_URL"):
     os.environ.pop(k, None)
 
 IMENA_PONUDNIKOV = ("tomtom", "openroute", "ors", "osrm", "google", "here", "nominatim", "mapbox")

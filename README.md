@@ -51,6 +51,7 @@ cp .env.example .env
 | `OLLAMA_URL`, `OLLAMA_MODEL` | lokalni LLM (rezerva) |
 | `AID_PRAVILA=0` | izklopi rezervo s pravili |
 | `TOMTOM_API_KEY`, `ORS_API_KEY`, `OSRM_URL` | ponudniki poti (skriti pred dispečerjem) |
+| `TOMTOM_MAP_KEY`, `AID_KARTA_ATRIBUCIJA` | podlaga karte in sloj prometa prek strežniškega posrednika `/ploscice/…` (brez ključa: OSM/CARTO) |
 | `GURS_GEOKODER_URL`, `AID_NOMINATIM=0`, `AID_REGISTER_NASLOVOV` | geokodiranje |
 | `AID_HELI_KMH`, `AID_HELI_DODATEK_MIN` | helikopter (privzeto 200 km/h + 5 min) |
 | `AID_DB`, `AID_IZVOZ`, `AID_USMERJANJE_LOG` | poti do SQLite, izvoza JSON, internega dnevnika poti |
