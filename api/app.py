@@ -66,9 +66,10 @@ class _SkrijKljuce(logging.Filter):
         return True
 
 
-for _ime in ("httpx", "httpcore", "usmerjanje", "karta", "geokodiranje", "poslusalec"):
+for _ime in ("httpx", "httpcore", "httpx2", "httpcore2", "usmerjanje", "karta", "geokodiranje", "poslusalec"):
     logging.getLogger(_ime).addFilter(_SkrijKljuce())
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 
 # ---------- telesa zahtev ----------

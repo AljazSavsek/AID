@@ -50,9 +50,10 @@ Ena enota = ena naprava: prijava iste enote v drugi aplikaciji odjavi prejšnjo.
 Flet aplikacijo z različnima voziloma. Oba spletna zaslona lahko v Chromu/Edgu namestite kot aplikacijo
 (ikona »Namesti« v naslovni vrstici).
 
-**Demo potek:** dispečer sprejme klic → potrdi naslov, lokacijo, prioriteto in enoto → ODOBRI IN POŠLJI → potrdi plan
-→ voznik predlagane enote dobi nalogo, potrdi prejem, sporoča stanja (PREJETO → NA POTI → NA KRAJU …), »Simuliraj vožnjo«
-→ »Sporočilo centru: Vozilo je obstalo« → dispečer v »Plan in karta → Sporočila ekip« potrdi → nov plan.
+**Demo potek:** dispečer sprejme klic → potrdi naslov, lokacijo in prioriteto → v kartici **Vozilo za odhod** izbere vozilo
+(prosta najprej, po času prihoda s prometom; vidi, ali ima voznik aplikacijo) → **ODOBRI IN POŠLJI** → **POTRDI PLAN IN POŠLJI**
+→ voznik izbranega vozila takoj dobi nalogo, pot in navodila, potrdi prejem in sporoča stanja; dispečer to vidi pod obrazcem.
+Če je voznik prijavljen pred klicem (npr. `voznik.html?enota=RV-3`, koda `DEMO-RV3`), se mu vse prikaže samodejno.
 
 Samo strežnik (brez odpiranja oken):
 

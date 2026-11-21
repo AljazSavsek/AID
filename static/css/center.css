@@ -224,3 +224,11 @@
 .oznaka-enote { background: #1D2228; color: #fff; font: 700 10.5px Inter, sans-serif; border-radius: 5px; padding: 3px 5px; text-align: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); white-space: nowrap; }
 .najblizja { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; margin: 2px 0 4px; }
 .najblizja .gumb { margin-left: auto; }
+
+.izbira-vozila tr.zasedena td { color: var(--besedilo-3); }
+.izbira-vozila tr.zasedena .eta { color: var(--besedilo-3); }
+.izbira-vozila .tip-vozila { color: var(--besedilo-2); font-size: 12px; }
+.izbira-vozila .znacka { font-size: 10px; padding: 1px 6px; }
+.voznik-da { font-size: 11px; font-weight: 700; color: var(--antracit); }
+.voznik-ne { font-size: 11px; font-weight: 700; color: var(--rdeca); }
+.izbira-vozila td.eta, .izbira-vozila td:nth-child(3) { white-space: nowrap; }
