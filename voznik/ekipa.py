@@ -76,11 +76,13 @@ class Ekipa:
         if not self.db.beri("enota", enota_id):
             raise NapakaEkipe("enota ne obstaja", 404)
         besedilo = ocisti(besedilo)
-        if bool(koda) == bool(besedilo):
-            raise NapakaEkipe("pošljite hitro sporočilo ALI besedilo", 422)
+        if not koda and not besedilo:
+            raise NapakaEkipe("prazno sporočilo", 422)
         if koda and koda not in HITRA_DISPECER:
             raise NapakaEkipe("neznano hitro sporočilo", 422)
-        s = self._shrani(enota_id, "od_dispecerja", koda, HITRA_DISPECER.get(koda, besedilo), False, uporabnik)
+        # hitro sporočilo + besedilo: pošlje se oboje (besedilo se nikoli ne izgubi)
+        celo = " – ".join(x for x in (HITRA_DISPECER.get(koda), besedilo) if x)
+        s = self._shrani(enota_id, "od_dispecerja", koda, celo, False, uporabnik)
         self.db.revizija(uporabnik, "Sporocilo", s["id"], "sporocilo_dispecerja", None,
                          {"enota_id": enota_id, "besedilo": s["besedilo"]})
         self.nv.objava.objavi(enota_id, "sporocilo", s)
@@ -96,6 +98,12 @@ class Ekipa:
             self.db.izvedi("UPDATE sporocilo SET prebrano=? WHERE id=?", (zdaj, sporocilo_id))
             self.c.objava.objavi("sporocilo_prebrano", {"id": sporocilo_id, "enota_id": enota_id, "prebrano": zdaj})
         return {"id": sporocilo_id, "prebrano": True}
+
+    def za_voznika(self, enota_id: str) -> list[dict]:
+        """Za napravo: zadnjih 10 sporočil dispečerja (lastna hitra sporočila jih ne izrinejo) + 5 lastnih."""
+        disp = self.db.izvedi("SELECT * FROM sporocilo WHERE enota_id=? AND smer='od_dispecerja' ORDER BY cas DESC LIMIT 10", (enota_id,))
+        moja = self.db.izvedi("SELECT * FROM sporocilo WHERE enota_id=? AND smer='od_voznika' ORDER BY cas DESC LIMIT 5", (enota_id,))
+        return sorted((dict(r, nujno=bool(r["nujno"])) for r in disp + moja), key=lambda m: -m["cas"])
 
     def sporocila(self, enota_id: str | None = None, omejitev: int = 30) -> list[dict]:
         if enota_id:

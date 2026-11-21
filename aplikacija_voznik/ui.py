@@ -468,9 +468,9 @@ class AplikacijaVoznika:
         if self._pot_cas:
             self.nav.controls.append(ft.Text(t("pot.posodobljena", ura=datetime.fromtimestamp(self._pot_cas).strftime("%H:%M"))))
 
-        # neprebrana / zadnja sporočila dispečerja (vedno vidna)
+        # zadnja sporočila dispečerja (vedno vidna; celotna zgodovina v razdelku SPOROČILA)
         self.sporocila_disp.controls.clear()
-        for m in [m for m in n.get("sporocila", []) if m["smer"] == "od_dispecerja"][:2]:
+        for m in [m for m in n.get("sporocila", []) if m["smer"] == "od_dispecerja"][:3]:
             self.sporocila_disp.controls.append(ft.Text(f"{datetime.fromtimestamp(m['cas']).strftime('%H:%M')} · "
                                                         + t("sporocilo.od_dispecerja", besedilo=m["besedilo"])))
 
@@ -502,6 +502,11 @@ class AplikacijaVoznika:
             else:
                 self.meni.controls.append(self.besedilo_sporocila)
                 self.meni.controls.append(ft.Row([velik_gumb(t("sporocilo.poslji"), self._besedilo, "poslji-besedilo")]))
+            self.meni.controls.append(ft.Text(t("sporocilo.zgodovina")))
+            for m in n.get("sporocila", []):
+                kdo = t("sporocilo.od_dispecerja", besedilo=m["besedilo"]) if m["smer"] == "od_dispecerja" \
+                    else t("sporocilo.moje", besedilo=m["besedilo"])
+                self.meni.controls.append(ft.Text(f"{datetime.fromtimestamp(m['cas']).strftime('%H:%M')} · {kdo}"))
         elif self.razdelek == "tezava":
             self.meni.controls.append(ft.Row([velik_gumb(t("tezava.okvara_potrdi") if self._potrjuje_okvaro else t("tezava.okvara"),
                                                          self._okvara, "okvara")]))

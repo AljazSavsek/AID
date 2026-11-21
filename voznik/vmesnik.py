@@ -53,7 +53,7 @@ class PotrditevVhod(BaseModel):
     obvestilo_id: str = Field(pattern=ID_VZOREC)
 
 
-class SporociloVhod(BaseModel):
+class SporociloVhod(BaseModel):  # voznik: hitro ALI besedilo; dispečer: hitro in/ali besedilo
     koda: str | None = Field(default=None, pattern=r"^[a-z_]{2,30}$")
     besedilo: str | None = Field(default=None, max_length=500)
 

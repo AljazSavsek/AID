@@ -122,5 +122,7 @@
   "predlog.odlocitev": "Dispečer: {tip} – {stanje}",
   "stanje.predlog.pacient_nalozen": "PACIENT NALOŽEN (bolnišnico izbere dispečer)",
   "stanje.predlog.ni_na_voljo": "NI NA VOLJO (predlog dispečerju)",
-  "pot.posodobljena": "Pot posodobljena ob {ura}."
+  "pot.posodobljena": "Pot posodobljena ob {ura}.",
+  "sporocilo.zgodovina": "Zgodovina sporočil",
+  "sporocilo.moje": "Jaz: {besedilo}"
 }
