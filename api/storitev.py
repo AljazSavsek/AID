@@ -315,9 +315,49 @@ class Center:
         if not prosti:
             return
         dokazi = lok["dokazi"] or [{"segment_id": "", "citat": "lokacija, ki jo je določil dispečer"}]
+        dodatno = {"enote": top, "izracunano": time.time()}
         self._uveljavi_posodobitev(klic_id, {"polje": "predlagana_enota", "vrednost": prosti[0]["enota_id"],
                                              "zaupanje": 0.8 if lok["stanje"] in M.POTRJENA else 0.65,
-                                             "dokazi": dokazi, "dodatno": {"enote": top}})
+                                             "dokazi": dokazi, "dodatno": dodatno})
+        # osveži tabelo časov tudi na že potrjenem predlogu (vrednosti ne spreminja)
+        for p in self.predlogi(klic_id):
+            if p["polje"] == "predlagana_enota" and p["stanje"] in M.POTRJENA:
+                p["dodatno"] = {**p.get("dodatno", {}), **dodatno}
+                self.db.shrani("predlog", p)
+                self.objava.objavi("predlog_posodobljen", p)
+
+    async def osvezi_najblizjo(self, klic_id: str, uporabnik: str) -> list[dict]:
+        """Ponovno poišče najbližjo enoto po trenutnem prometu. Sprememba je le PREDLOG."""
+        self.klic(klic_id)
+        self.db.revizija(uporabnik, "Klic", klic_id, "osvezi_najblizjo", None, None)
+        await self._predlagaj_enoto(klic_id)
+        return self.predlogi(klic_id)
+
+    @staticmethod
+    def _redci(geometrija: list, najvec: int = 400) -> list:
+        if len(geometrija) <= najvec:
+            return geometrija
+        korak = len(geometrija) / (najvec - 1)
+        return [geometrija[int(i * korak)] for i in range(najvec - 1)] + [geometrija[-1]]
+
+    async def pot_enote(self, enota_id: str, lat: float, lon: float) -> dict:
+        """Pot enote do cilja po cestah (s prometom, če je na voljo). Brez imena ponudnika."""
+        e = self.db.beri("enota", enota_id)
+        if not e:
+            raise NapakaStoritve("enota ne obstaja", 404)
+        pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"])
+        zamik = max(0, (e.get("na_voljo_od") or 0) - time.time())
+        return {"enota_id": enota_id, "tip": e["tip"], "od": [e["lat"], e["lon"]], "do": [lat, lon],
+                "cas_s": round(pot["cas_s"] + zamik), "razdalja_m": pot["razdalja_m"],
+                "kakovost": pot["kakovost"], "geometrija": self._redci(pot["geometrija"])}
+
+    async def poti(self, odseki: list[dict]) -> list[dict]:
+        """Geometrija več odsekov naenkrat (za risanje plana po cestah)."""
+        async def en(o):
+            pot = await self.usmerjanje.izracunaj(tuple(o["od"]), tuple(o["do"]), o.get("tip", "vozilo"))
+            return {"cas_s": pot["cas_s"], "razdalja_m": pot["razdalja_m"], "kakovost": pot["kakovost"],
+                    "geometrija": self._redci(pot["geometrija"], 200)}
+        return list(await asyncio.gather(*(en(o) for o in odseki[:80])))
 
     # ================= dejanja dispečerja =================
     def predlog(self, predlog_id: str) -> dict:

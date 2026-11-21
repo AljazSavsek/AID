@@ -218,3 +218,9 @@
 #dogodki-klica:empty { display: none; }
 .kartica.dogodek .oznaka { color: var(--rdeca); }
 .urejevalnik label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--besedilo-2); }
+.mini-karta { height: 210px; }
+.pot-povzetek { font-size: 12.5px; font-weight: 600; color: var(--rdeca); margin-top: -4px; }
+.pot-povzetek:empty { display: none; }
+.oznaka-enote { background: #1D2228; color: #fff; font: 700 10.5px Inter, sans-serif; border-radius: 5px; padding: 3px 5px; text-align: center; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); white-space: nowrap; }
+.najblizja { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; margin: 2px 0 4px; }
+.najblizja .gumb { margin-left: auto; }
