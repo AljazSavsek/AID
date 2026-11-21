@@ -70,11 +70,12 @@ class Pot:
     navodila: list = field(default_factory=list)    # [{sporocilo, odmik_m, ulica, manever, lat, lon}]
     opozorila: list = field(default_factory=list)   # [{vrsta, od_m, do_m, zamuda_s, hitrost_kmh, lat, lon}]
     zamuda_prometa_s: float = 0.0
+    izogiba: bool = False   # pot se izogiba aktivnim oviram
 
     def javno(self) -> dict:
         """Edina oblika, ki zapusti servis (brez imena ponudnika)."""
         return {"cas_s": round(self.cas_s), "razdalja_m": round(self.razdalja_m),
-                "geometrija": self.geometrija, "kakovost": self.kakovost,
+                "geometrija": self.geometrija, "kakovost": self.kakovost, "izogiba_oviram": self.izogiba,
                 "navodila": self.navodila, "opozorila": self.opozorila,
                 "zamuda_prometa_s": round(self.zamuda_prometa_s)}
 
@@ -89,6 +90,7 @@ def zracna_razdalja_m(a: tuple, b: tuple) -> float:
 class Ponudnik:
     ime = "ponudnik"
     kakovost = KAKOVOST_BREZ_PROMETA
+    podpira_izogibanje = False  # izogibanje območjem (ovire na cesti)
 
     def na_voljo(self) -> bool:
         return True
@@ -117,17 +119,25 @@ class TomTom(_HttpPonudnik):
 
     omejevalnik = Omejevalnik(int(os.environ.get("AID_TOMTOM_HKRATI", 3)), float(os.environ.get("AID_TOMTOM_QPS", 5)))
 
-    async def izracunaj(self, od, do, tip_enote):
+    podpira_izogibanje = True
+
+    async def izracunaj(self, od, do, tip_enote, izogibaj=None):
         import asyncio
         kljuc = os.environ.get("TOMTOM_API_KEY")
         if not kljuc:
             raise NapakaPonudnika("ni ključa")
         url = f"https://api.tomtom.com/routing/1/calculateRoute/{od[0]},{od[1]}:{do[0]},{do[1]}/json"
         for poskus in (1, 2):
+            parametri = {"key": kljuc, "traffic": "true", "routeType": "fastest", "travelMode": "car",
+                         "sectionType": "traffic", "instructionsType": "text", "language": "sl-SI"}
             async with self.omejevalnik:
-                r = await self.http.get(url, params={"key": kljuc, "traffic": "true", "routeType": "fastest",
-                                                     "travelMode": "car", "sectionType": "traffic",
-                                                     "instructionsType": "text", "language": "sl-SI"})
+                if izogibaj:  # ovire: pravokotniki (jug, zahod, sever, vzhod)
+                    telo = {"avoidAreas": {"rectangles": [
+                        {"southWestCorner": {"latitude": j, "longitude": z}, "northEastCorner": {"latitude": s_, "longitude": v}}
+                        for j, z, s_, v in izogibaj]}}
+                    r = await self.http.post(url, params=parametri, json=telo)
+                else:
+                    r = await self.http.get(url, params=parametri)
             if r.status_code == 429 or (r.status_code == 403 and "rate" in r.text.lower()):
                 if poskus == 1:
                     await asyncio.sleep(min(1.0, float(r.headers.get("retry-after", 0.5) or 0.5)))
@@ -183,14 +193,18 @@ class OpenRouteService(_HttpPonudnik):
     def na_voljo(self) -> bool:
         return bool(os.environ.get("ORS_API_KEY"))
 
-    async def izracunaj(self, od, do, tip_enote):
+    podpira_izogibanje = True
+
+    async def izracunaj(self, od, do, tip_enote, izogibaj=None):
         kljuc = os.environ.get("ORS_API_KEY")
         if not kljuc:
             raise NapakaPonudnika("ni ključa")
         r = await self.http.post(
             "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
             headers={"Authorization": kljuc},
-            json={"coordinates": [[od[1], od[0]], [do[1], do[0]]]},
+            json={"coordinates": [[od[1], od[0]], [do[1], do[0]]],
+                  **({"options": {"avoid_polygons": {"type": "MultiPolygon", "coordinates": [
+                      [[[z, j], [v, j], [v, s_], [z, s_], [z, j]]] for j, z, s_, v in izogibaj]}}} if izogibaj else {})},
         )
         if r.status_code != 200:
             raise NapakaPonudnika(f"HTTP {r.status_code}")

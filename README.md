@@ -55,6 +55,13 @@ Flet aplikacijo z različnima voziloma. Oba spletna zaslona lahko v Chromu/Edgu 
 → voznik izbranega vozila takoj dobi nalogo, pot in navodila, potrdi prejem in sporoča stanja; dispečer to vidi pod obrazcem.
 Če je voznik prijavljen pred klicem (npr. `voznik.html?enota=RV-3`, koda `DEMO-RV3`), se mu vse prikaže samodejno.
 
+**Demo ovire:** ko je vozilo na poti (pri vozniku »NA POTI« in »Simuliraj vožnjo«), v pogledu dispečerja odprite
+**Stanje sistema → Demo**:
+1. **Zapora ceste** – zapora na poslani poti → pas »Ovira na poti« → **Predlagaj obvoz** (stara in nova pot na karti)
+   → **POTRDI OBVOZ IN POŠLJI** → voznik takoj dobi novo pot, navodila in sporočilo »OBVOZ …«.
+2. **Vozilo obtiči** – vozilo stoji za nesrečo (+30 min), obvoz ni mogoč → **Pošlji drugo enoto** → izbira vozila
+   (časi mimo ovir) → **POTRDI PLAN IN POŠLJI** → novo vozilo dobi nalogo, prejšnje okno »Naloga predana drugi enoti«.
+
 Samo strežnik (brez odpiranja oken):
 
 ```bash

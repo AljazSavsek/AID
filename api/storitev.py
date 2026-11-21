@@ -96,6 +96,8 @@ class Center:
         self.po_potrditvi_plana: list = []
         self.naloge_voznikov = NalogeVoznikov(self, self.nast_voznika.rok_potrditve_s)
         self.ekipa = Ekipa(self, self.naloge_voznikov)
+        from .ovire import Ovire
+        self.ovire = Ovire(self)
         self.naloge_voznikov.ekipa = self.ekipa
         self.nalozi_scenarij(scenarij or KOREN / "demo" / "scenarij.json")
 
@@ -327,12 +329,13 @@ class Center:
                                                  "dokazi": dokazi, "dodatno": {"iz_naslova": k["naslov"]}})
 
     # ---------- usmerjanje + planer -> predlog enote ----------
-    async def eta_enot(self, lat: float, lon: float, omejitev: int = 3) -> list[dict]:
+    async def eta_enot(self, lat: float, lon: float, omejitev: int = 3, izogibaj_ovire: bool = False) -> list[dict]:
         """Časi prihoda prostih enot (samo čas, razdalja, kakovost – brez ponudnika)."""
         enote = [e for e in self.enote() if e["stanje"] not in M.NERAZPOLOZLJIVA]
 
         async def ena(e):
-            pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"])
+            rects = self.ovire.izogibanja((e["lat"], e["lon"]), (lat, lon))[0] if izogibaj_ovire and e["tip"] != "helikopter" else None
+            pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"], izogibaj=rects)
             zamik = max(0, (e.get("na_voljo_od") or 0) - time.time())
             return {"enota_id": e["id"], "tip": e["tip"], "ime": e["ime"], "stanje": e["stanje"],
                     "cas_s": round(pot["cas_s"] + zamik), "razdalja_m": pot["razdalja_m"], "kakovost": pot["kakovost"]}
@@ -543,6 +546,8 @@ class Center:
         self.db.shrani("dogodek", d)
         self._shrani_stanje(st)
         self.db.revizija(uporabnik, "Dogodek", d["id"], "uveljavi", None, {"tip": d["tip"], "parametri": d["parametri"], "opis": opis})
+        if d["tip"] == "ovira_na_cesti":
+            self.ovire.objavi_vpliv()  # katera poslana vozila gredo čez oviro -> dispečer odloči o obvozu
         self.objava.objavi("dogodek", d)
         self.objava.objavi("enote", self.enote())
         if not planiraj:  # npr. ovira na cesti: ne vpliva na dodelitve

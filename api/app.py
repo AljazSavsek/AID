@@ -32,6 +32,7 @@ from zajem.simulator import nalozi_klic, predvajaj
 from voznik.omejitve import Omejevalnik
 
 from .dispecer import PISKOTEK, TRAJANJE_S, Dispecerji, NapakaPrijaveDispecerja, Varovalo
+from .ovire import NapakaOvire
 from .storitev import Center, NapakaStoritve
 
 KOREN = Path(__file__).resolve().parent.parent
@@ -113,6 +114,15 @@ class Odsek(BaseModel):
 
 class OdsekiVhod(BaseModel):
     odseki: list[Odsek] = Field(max_length=80)
+
+
+class DodeliVhod(BaseModel):
+    enota_id: str = Field(pattern=r"^[A-Za-z0-9._:-]{1,64}$")
+
+
+class DemoOvira(BaseModel):
+    faza: str = Field(pattern="^(zapora|obtical)$")
+    enota_id: str | None = None
 
 
 class DemoKlic(BaseModel):
@@ -243,6 +253,37 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         out.sort(key=lambda x: x["razdalja_m"])
         return {"vozila": out[:5], "cas": zdaj}
 
+    # ---------- ovire na poti: obvoz in prerazporeditev (odloča dispečer) ----------
+    @app.get("/ovire/vpliv")
+    async def ovire_vpliv():
+        return {"ovire": C().ovire.aktivne(), "vpliv": C().ovire.vpliv()}
+
+    @app.get("/enote/{enota_id}/obvoz")
+    async def obvoz_predlog(enota_id: str, request: Request):
+        omeji("pot", request)
+        return await C().ovire.predlog_obvoza(enota_id)
+
+    @app.post("/enote/{enota_id}/obvoz")
+    async def obvoz_potrdi(enota_id: str, u: str = Depends(uporabnik)):
+        return await C().ovire.potrdi_obvoz(enota_id, u)
+
+    @app.get("/naloge/{naloga_id}/kandidati")
+    async def kandidati(naloga_id: str, request: Request):
+        omeji("eta", request)
+        return await C().ovire.kandidati(naloga_id)
+
+    @app.post("/naloge/{naloga_id}/dodeli")
+    async def dodeli(naloga_id: str, v: DodeliVhod, u: str = Depends(uporabnik)):
+        return {"plan_predlog": await C().ovire.dodeli(naloga_id, v.enota_id, u)}
+
+    @app.post("/ovire/{dogodek_id}/odstrani")
+    async def odstrani_oviro(dogodek_id: str, u: str = Depends(uporabnik)):
+        return C().ovire.odstrani(dogodek_id, u)
+
+    @app.post("/demo/ovira")
+    async def demo_ovira(v: DemoOvira, u: str = Depends(uporabnik)):
+        return await C().ovire.demo(v.faza, v.enota_id, u)
+
     @app.get("/voznik/enote-za-prijavo")
     async def enote_za_prijavo():
         """Za prijavni obrazec voznika: samo id in ime (brez položajev in nalog)."""
@@ -312,6 +353,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
 
     def C() -> Center:
         return stanje["center"]
+
+    @app.exception_handler(NapakaOvire)
+    async def napaka_ovire(_: Request, e: NapakaOvire):
+        return JSONResponse({"napaka": str(e)}, status_code=e.koda)
 
     @app.exception_handler(NapakaStoritve)
     async def napaka(_: Request, e: NapakaStoritve):
