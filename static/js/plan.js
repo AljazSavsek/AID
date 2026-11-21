@@ -54,7 +54,12 @@
     edinstveni.forEach((o) => zahtevano.add(o.kl));
     try {
       const r = await AID.api("/poti", { metoda: "POST", telo: { odseki: edinstveni.map(({ od, do: d, tip }) => ({ od, do: d, tip })) } });
-      r.forEach((x, i) => { if (x.geometrija && x.geometrija.length >= 2) geometrije.set(edinstveni[i].kl, x.geometrija); });
+      let ponovi = false;
+      r.forEach((x, i) => {
+        if (x.kakovost !== "ocena" && x.geometrija && x.geometrija.length > 2) geometrije.set(edinstveni[i].kl, x.geometrija);
+        else ponovi = true; // pot po cestah trenutno ni na voljo – ravna črta ni končna
+      });
+      if (ponovi) setTimeout(() => { edinstveni.forEach((o) => { if (!geometrije.has(o.kl)) zahtevano.delete(o.kl); }); izrisiKarto(); }, 20000);
       izrisiKarto();
     } catch (_) {
       edinstveni.forEach((o) => zahtevano.delete(o.kl)); // poskusi ob naslednjem izrisu
@@ -83,10 +88,15 @@
           const kl = kljucOdseka(prej, [k.lat, k.lon], e.tip);
           const g = geometrije.get(kl);
           if (g) tocke.push(...g);
-          else { tocke.push(prej, [k.lat, k.lon]); if (!zahtevano.has(kl)) manjkajo.push({ kl, od: prej, do: [k.lat, k.lon], tip: e.tip }); }
+          else {
+            tocke.push(prej, [k.lat, k.lon]);
+            // helikopter res leti po zraku – zanj ne iščemo poti po cestah
+            if (e.tip !== "helikopter" && !zahtevano.has(kl)) manjkajo.push({ kl, od: prej, do: [k.lat, k.lon], tip: e.tip });
+          }
           prej = [k.lat, k.lon];
         });
-        L.polyline(tocke, slog).addTo(sloj);
+        L.polyline(tocke, e.tip === "helikopter" ? { ...slog, weight: 2.5, dashArray: "2 7" } : slog)
+          .bindTooltip(e.tip === "helikopter" ? `${esc(e.id)} · zračna pot` : esc(e.id), { sticky: true }).addTo(sloj);
       });
     };
     poti(P.aktiven, sloji.aktiven, { color: "#1D2228", weight: 3, opacity: 0.55 });

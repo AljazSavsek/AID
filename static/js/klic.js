@@ -603,16 +603,23 @@
     }
     if (kljuc !== potKljuc) return; // med čakanjem se je izbira spremenila
     const potrjena = POTRJENA.includes(en.stanje);
-    const opis = `${r.enota_id} · ${Math.max(1, Math.round(r.cas_s / 60))} min · ${(r.razdalja_m / 1000).toFixed(1)} km · ${r.kakovost}`;
+    const zracna = r.tip === "helikopter";
+    const ravna = !zracna && r.kakovost === "ocena";
+    const opis = `${r.enota_id} · ${Math.max(1, Math.round(r.cas_s / 60))} min · ${(r.razdalja_m / 1000).toFixed(1)} km · ${zracna ? "zračna pot" : r.kakovost}`;
+    if (ravna) { // pot po cestah trenutno ni na voljo – poskusi znova
+      const k = kljuc;
+      setTimeout(() => { if (potKljuc === k) { potKljuc = null; posodobiMiniKarto(); } }, 15000);
+    }
     potSloj = L.layerGroup([
       L.polyline(r.geometrija, { color: "#fff", weight: 8, opacity: 0.9 }),
-      L.polyline(r.geometrija, { color: "#8A1525", weight: 4.5, dashArray: potrjena ? null : "9 7" }).bindTooltip(opis, { sticky: true }),
+      L.polyline(r.geometrija, { color: "#8A1525", weight: zracna ? 3 : 4.5, dashArray: zracna ? "2 8" : potrjena ? null : "9 7" }).bindTooltip(opis, { sticky: true }),
       L.marker(r.od, { icon: L.divIcon({ className: "", iconSize: [40, 22], iconAnchor: [20, 11],
         html: `<div class="oznaka-enote">${esc(r.enota_id)}</div>` }) }).bindTooltip(opis),
     ]).addTo(karta);
     karta.fitBounds(L.latLngBounds([...r.geometrija, [lok.vrednost.lat, lok.vrednost.lon]]), { padding: [18, 18], maxZoom: 16 });
     const n = document.getElementById("pot-povzetek");
-    if (n) n.textContent = (potrjena ? "Pot potrjene enote: " : "Pot predlagane enote: ") + opis;
+    if (n) n.textContent = (potrjena ? "Pot potrjene enote: " : "Pot predlagane enote: ") + opis +
+      (ravna ? " – ravna črta: pot po cestah trenutno ni na voljo, poskušam znova …" : "");
   }
 
   AID.ikonaCilja = () => L.divIcon({ className: "", html: '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;background:#8A1525;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconSize: [22, 22], iconAnchor: [11, 22] });
@@ -659,6 +666,12 @@
     if (o.vrsta === "geokodiranje") $("mini-karta").classList.add("izbiranje");
   });
 
+  function nastaviKakovost(k) {
+    const el = $("st-eta");
+    el.textContent = k === "natančno" ? "natančno (s prometom)" : k === "brez prometa" ? "brez prometa" : k ? "ocena (ravne črte)" : "ocena v brskalniku";
+    el.className = "pika" + (k === "natančno" ? "" : " napaka");
+  }
+
   /* ================= zagon ================= */
   async function zagon() {
     zacniKarto();
@@ -672,7 +685,8 @@
       }
       const st = await AID.api("/stanje?od=999999999");
       nastaviAi(st.ai_na_voljo);
-      $("st-eta").textContent = "na voljo"; $("st-eta").className = "pika";
+      nastaviKakovost(st.kakovost_poti);
+      setInterval(() => AID.api("/stanje?od=999999999").then((x) => nastaviKakovost(x.kakovost_poti)).catch(() => nastaviKakovost(null)), 15000);
     } catch (e) {
       S.enote = AID.beri("aid_enote", []); // zadnje znano stanje
       $("st-eta").textContent = "ocena v brskalniku"; $("st-eta").className = "pika napaka";

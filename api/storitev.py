@@ -518,9 +518,10 @@ class Center:
             raise NapakaStoritve("plan ne obstaja", 404)
         return p
 
-    async def _matrike(self, tocke: list[tuple], tipi: list[str], zacetki: int) -> tuple[dict, dict]:
-        """Osnova: hitra ocena za celotno matriko; vrstice od enot do ciljev
-        izboljša usmerjevalni servis (rok 1,5 s, sicer ostane ocena)."""
+    async def _matrike(self, tocke: list[tuple], tipi: list[str], zacetki: int, nujni: list[int] | None = None) -> tuple[dict, dict]:
+        """Osnova: hitra ocena za celotno matriko. Že znani časi s prometom (predpomnilnik)
+        jo izboljšajo brez klicev; po cestah se na novo računa le enote -> nujne naloge
+        (malo zahtev, da ne presežemo omejitve ponudnika)."""
         casi, razdalje = {}, {}
         for t in tipi:
             f = helikopter if t == "helikopter" else (lambda a, b, t=t: zracna_ocena(a, b, t))
@@ -533,16 +534,24 @@ class Center:
                         C[i][j], R[i][j] = p.cas_s, p.razdalja_m
             casi[t], razdalje[t] = C, R
         cestni = [t for t in tipi if t != "helikopter"]
+        for t in cestni:
+            for i, a in enumerate(tocke):
+                for j, b in enumerate(tocke):
+                    if i != j and a != (0.0, 0.0) and b != (0.0, 0.0):
+                        r = self.usmerjanje.iz_predpomnilnika(a, b, t)
+                        if r:
+                            casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
         izvori = tocke[:zacetki]
-        cilji = [(j, b) for j, b in enumerate(tocke[zacetki:], start=zacetki) if b != (0.0, 0.0)]
-        try:
-            for t in cestni:
-                m = await asyncio.wait_for(self.usmerjanje.matrika(izvori, [b for _, b in cilji], t), 1.5)
-                for i in range(len(izvori)):
-                    for (j, _), r in zip(cilji, m[i]):
-                        casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
-        except asyncio.TimeoutError:
-            dnevnik.info("matrika: rok presežen – uporabljena ocena")
+        cilji = [(j, tocke[j]) for j in (nujni or []) if tocke[j] != (0.0, 0.0)]
+        if cilji:
+            try:
+                for t in cestni:
+                    m = await asyncio.wait_for(self.usmerjanje.matrika(izvori, [b for _, b in cilji], t), 2.0)
+                    for i in range(len(izvori)):
+                        for (j, _), r in zip(cilji, m[i]):
+                            casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
+            except asyncio.TimeoutError:
+                dnevnik.info("matrika: rok presežen – za del poti uporabljena ocena")
         return casi, razdalje
 
     async def predlagaj_plan(self, razlog: str, zelena_enota: tuple | None = None) -> dict | None:
@@ -555,8 +564,10 @@ class Center:
                 prejsnji["koraki_po_enoti"].setdefault(zelena_enota[1], []).insert(0, {"naloga_id": zelena_enota[0], "akcija": "prevzem"})
             n_zacetkov = len([e for e in st["enote"] if e["stanje"] != "okvara"])
             opombe = preusmeri_po_zmogljivosti(st)  # najprej, da se vozlišča ujemajo z matriko
-            tocke = [(v.lat, v.lon) for v in sestavi_model(copy.deepcopy(st), time.time()).vozlisca]
-            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] != "okvara"}), n_zacetkov)
+            vozlisca = sestavi_model(copy.deepcopy(st), time.time()).vozlisca
+            tocke = [(v.lat, v.lon) for v in vozlisca]
+            nujni = [v.indeks for v in vozlisca if v.akcija == "prihod" and v.prioriteta <= 2]
+            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] != "okvara"}), n_zacetkov, nujni)
             loop = asyncio.get_running_loop()
             t0 = time.perf_counter()
             planovi = await loop.run_in_executor(None, lambda: planiraj(st, lambda *_: (casi, razdalje), prejsnji, self.nast))
