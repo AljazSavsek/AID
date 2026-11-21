@@ -111,7 +111,8 @@ class DemoKlic(BaseModel):
 
 
 def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
-    return (x_uporabnik or "dispečer").strip()[:60]
+    from urllib.parse import unquote
+    return (unquote(x_uporabnik) if x_uporabnik else "dispečer").strip()[:60]
 
 
 def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:

@@ -36,7 +36,7 @@
     try {
       r = await fetch(pot, {
         method: metoda,
-        headers: { "Content-Type": "application/json", "X-Uporabnik": AID.uporabnik() },
+        headers: { "Content-Type": "application/json", "X-Uporabnik": encodeURIComponent(AID.uporabnik()) }, // šumniki niso dovoljeni v glavi
         body: telo === undefined ? undefined : JSON.stringify(telo),
       });
     } catch (e) {
