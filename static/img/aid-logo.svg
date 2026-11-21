@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 40" role="img" aria-label="AID">
+  <rect x="0" y="0" width="40" height="40" rx="9" fill="#1D2228"/>
+  <path d="M16 8h8v8h8v8h-8v8h-8v-8H8v-8h8z" fill="#FFFFFF"/>
+  <path d="M5 21h8l3-5 4 10 3-6h12" fill="none" stroke="#8A1525" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="50" y="30" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="1" fill="#1D2228">A<tspan fill="#8A1525">I</tspan>D</text>
+</svg>
