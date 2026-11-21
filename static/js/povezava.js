@@ -9,7 +9,7 @@
   let seq = 0;
   let ws = null, wsOdprt = false, poskusi = 0, pollTimer = null, zadnjiOdziv = 0;
 
-  AID.uporabnik = () => (document.getElementById("ime-uporabnika")?.value || "dispečer").trim();
+  AID.uporabnik = () => (document.getElementById("ime-uporabnika")?.value || AID.imeUporabnika || "dispečer").trim();
 
   AID.na = function (tip, fn) { (poslusalci[tip] = poslusalci[tip] || []).push(fn); };
   function razposlji(s) {
@@ -23,6 +23,7 @@
     const el = document.getElementById("povezava");
     const pas = document.getElementById("pas-povezave");
     const st = document.getElementById("st-streznik");
+    if (!el || !pas) return;
     el.classList.toggle("napaka", stanje === "brez");
     el.textContent = besedilo;
     if (st) { st.textContent = besedilo.toLowerCase(); st.className = "pika " + (stanje === "brez" ? "napaka" : ""); }
@@ -36,7 +37,7 @@
     try {
       r = await fetch(pot, {
         method: metoda,
-        headers: { "Content-Type": "application/json", "X-Uporabnik": AID.uporabnik() },
+        headers: { "Content-Type": "application/json", "X-Uporabnik": encodeURIComponent(AID.uporabnik()) }, // šumniki niso dovoljeni v glavi
         body: telo === undefined ? undefined : JSON.stringify(telo),
       });
     } catch (e) {
@@ -93,11 +94,16 @@
     return 2 * R * Math.asin(Math.sqrt(x));
   };
 
+  // začni od trenutnega stanja strežnika (začetno stanje se naloži prek REST)
+  function poveziZacetek() {
+    AID.api("/stanje?od=999999999").then((r) => { seq = r.seq; }).catch(() => {}).finally(poveziWs);
+  }
+
   /* ---------- pogledi ---------- */
   function preklopi(ime) {
     document.querySelectorAll(".pogledi button").forEach((b) => { if (b.dataset.pogled === ime) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
-    document.getElementById("pogled-klic").classList.toggle("skrito", ime !== "klic");
-    document.getElementById("pogled-plan").classList.toggle("skrito", ime !== "plan");
+    document.getElementById("pogled-klic")?.classList.toggle("skrito", ime !== "klic");
+    document.getElementById("pogled-plan")?.classList.toggle("skrito", ime !== "plan");
     AID.pisi("aid_pogled", ime);
     (poslusalci["pogled"] || []).forEach((f) => f(ime));
   }
@@ -106,13 +112,13 @@
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".pogledi button").forEach((b) => (b.onclick = () => preklopi(b.dataset.pogled)));
     const ime = document.getElementById("ime-uporabnika");
+    if (!ime) { poveziZacetek(); return; } // stran brez glave dispečerja (npr. voznik)
     ime.value = AID.beri("aid_uporabnik", ime.value);
     const avatar = () => (document.getElementById("avatar").textContent = ime.value.split(/[\s.]+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 2).toUpperCase());
     avatar();
     ime.onchange = () => { AID.pisi("aid_uporabnik", ime.value.trim()); avatar(); };
     preklopi(AID.beri("aid_pogled", "klic"));
-    // začni od trenutnega stanja strežnika (začetno stanje se naloži prek REST)
-    AID.api("/stanje?od=999999999").then((r) => { seq = r.seq; }).catch(() => {}).finally(poveziWs);
+    poveziZacetek();
   });
 })();
 

@@ -259,6 +259,71 @@
     gumb.disabled = false; gumb.textContent = "Vnesi in predlagaj nov plan";
   };
 
+  /* ---------- sporočila ekip -> predlogi dogodkov (potrdi dispečer) ---------- */
+  P.predlogiDogodkov = [];
+  P.sporocila = [];
+  const DOG = { okvara_vozila: "Okvara vozila", megla: "Megla", nujna_naloga: "Nujna naloga", manjsa_zmogljivost_centra: "Manjša zmogljivost centra", sprememba_prioritete: "Sprememba prioritete" };
+  function izrisiSporocila() {
+    const pr = P.predlogiDogodkov;
+    $("st-sporocil").textContent = pr.length;
+    $("st-sporocil").classList.toggle("skrito", !pr.length);
+    const kartice = pr.map((d) => {
+      const par = d.parametri || {};
+      const izbira = d.tip === "okvara_vozila" ? `<select data-enota-dog="${esc(d.id)}">${P.enote.filter((e) => e.tip !== "helikopter").map((e) =>
+        `<option ${e.id === par.enota_id ? "selected" : ""}>${esc(e.id)}</option>`).join("")}</select>` : esc(par.enota_id || "");
+      return `<div class="sp-kartica"><div class="sp-od">Ekipa ${esc(d.enota_posiljatelj || "")} · AI predlog ${d.zaupanje != null ? Math.round(d.zaupanje * 100) + " %" : ""}</div>
+        <div class="sp-besedilo">„${esc(d.sporocilo || "")}“</div>
+        <div class="sp-predlog">${esc(DOG[d.tip] || d.tip)} ${izbira}${par.tovor_ostane ? " · tovor ostane v vozilu" : ""}${par.zamik_min ? ` · +${esc(par.zamik_min)} min` : ""}</div>
+        <div class="k-gumbi"><button class="gumb majhen temen" data-dog-sprejmi="${esc(d.id)}">Sprejmi in predlagaj plan</button><button class="gumb majhen" data-dog-zavrni="${esc(d.id)}">Zavrni</button></div></div>`;
+    });
+    const info = P.sporocila.filter((m) => !m.predlogi.length).slice(-3).reverse().map((m) =>
+      `<div class="sp-kartica info"><div class="sp-od">Ekipa ${esc(m.enota_id)} · ${AID.uraKratko(new Date(m.cas * 1000))}</div><div class="sp-besedilo">„${esc(m.besedilo)}“</div></div>`);
+    $("sporocila-ekip").innerHTML = [...kartice, ...info].join("") || '<p class="prazno-besedilo">Ni novih sporočil.</p>';
+  }
+  $("sporocila-ekip").onclick = async (e) => {
+    const s = e.target.closest("[data-dog-sprejmi]"), z = e.target.closest("[data-dog-zavrni]");
+    if (!s && !z) return;
+    const id = (s || z).dataset.dogSprejmi || (s || z).dataset.dogZavrni;
+    const d = P.predlogiDogodkov.find((x) => x.id === id);
+    try {
+      if (z) {
+        await AID.api(`/dogodek/${id}/zavrni`, { metoda: "POST", telo: { razlog: null } });
+      } else {
+        const sel = document.querySelector(`[data-enota-dog="${id}"]`);
+        const parametri = sel && sel.value !== d.parametri.enota_id ? { ...d.parametri, enota_id: sel.value } : null;
+        s.disabled = true; s.textContent = "Planer računa …";
+        const r = await AID.api(`/dogodek/${id}/sprejmi`, { metoda: "POST", telo: { parametri } });
+        AID.obvestilo("Dogodek potrjen", r.dogodek.opis || "");
+        await osvezi();
+        if (r.plan_predlog) await nastaviPredlog(r.plan_predlog);
+      }
+      P.predlogiDogodkov = P.predlogiDogodkov.filter((x) => x.id !== id);
+      izrisiSporocila();
+    } catch (e2) { napaka(e2); izrisiSporocila(); }
+  };
+  AID.na("dogodek_predlog", (d) => {
+    P.predlogiDogodkov.push(d); izrisiSporocila();
+    AID.obvestilo(`Sporočilo ekipe ${d.enota_posiljatelj}`, `„${d.sporocilo}“ – AI predlaga: ${DOG[d.tip] || d.tip}. Potrdite v pogledu »Plan in karta«.`, true, 8000);
+    $("znacka-plan").classList.remove("skrito");
+  });
+  AID.na("sporocilo_ekipe", (m) => {
+    P.sporocila.push(m); izrisiSporocila();
+    if (!m.predlogi.length) AID.obvestilo(`Sporočilo ekipe ${m.enota_id}`, m.besedilo, false, 7000);
+  });
+  AID.na("dogodek", (d) => { if (d.stanje !== "predlagano") { P.predlogiDogodkov = P.predlogiDogodkov.filter((x) => x.id !== d.id); izrisiSporocila(); } });
+  AID.na("status_ekipe", (s) => {
+    const opis = { na_poti: "na poti", na_kraju: "na kraju", prevzeto: "prevzeto", dostavljeno: "dostavljeno", opravljeno: "opravljeno" }[s.akcija] || s.akcija;
+    AID.obvestilo(`${s.enota_id}: ${opis}`, s.naloga_id);
+    AID.api("/naloge").then((n) => { P.naloge = n; izrisiVse(); }).catch(() => {});
+  });
+  let premikTimer = null;
+  AID.na("enota_premik", (m) => {
+    const e = P.enote.find((x) => x.id === m.id);
+    if (!e) return;
+    Object.assign(e, { lat: m.lat, lon: m.lon });
+    if (!premikTimer) premikTimer = setTimeout(() => { premikTimer = null; izrisiKarto(); }, 500);
+  });
+
   /* ---------- podatki ---------- */
   async function osvezi() {
     try {
@@ -267,8 +332,10 @@
     } catch (_) {
       Object.assign(P, AID.beri("aid_plan", {})); // zadnje znano stanje
     }
+    try { P.predlogiDogodkov = await AID.api("/dogodki?stanje=predlagano"); } catch (_) {}
     poljaDogodka();
     izrisiVse();
+    izrisiSporocila();
   }
 
   AID.na("plan_predlog", async (p) => {

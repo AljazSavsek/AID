@@ -35,7 +35,7 @@ def run(k):
 def test_primarni_odgovori():
     r = run(servis(Lazen("tomtom", 300), Lazen("ors", 320, kakovost="brez prometa")).izracunaj(OD, DO))
     assert r["cas_s"] == 300 and r["kakovost"] == "natančno"
-    assert set(r) == {"cas_s", "razdalja_m", "geometrija", "kakovost"}
+    assert set(r) == {"cas_s", "razdalja_m", "geometrija", "kakovost", "navodila", "opozorila", "zamuda_prometa_s"}
 
 
 @pytest.mark.parametrize("izklopljen", [0, 1, 2])

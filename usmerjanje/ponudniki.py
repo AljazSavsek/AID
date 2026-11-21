@@ -67,11 +67,16 @@ class Pot:
     razdalja_m: float
     geometrija: list = field(default_factory=list)  # [[lat, lon], ...]
     kakovost: str = KAKOVOST_OCENA
+    navodila: list = field(default_factory=list)    # [{sporocilo, odmik_m, ulica, manever, lat, lon}]
+    opozorila: list = field(default_factory=list)   # [{vrsta, od_m, do_m, zamuda_s, hitrost_kmh, lat, lon}]
+    zamuda_prometa_s: float = 0.0
 
     def javno(self) -> dict:
-        """Edina oblika, ki zapusti servis."""
+        """Edina oblika, ki zapusti servis (brez imena ponudnika)."""
         return {"cas_s": round(self.cas_s), "razdalja_m": round(self.razdalja_m),
-                "geometrija": self.geometrija, "kakovost": self.kakovost}
+                "geometrija": self.geometrija, "kakovost": self.kakovost,
+                "navodila": self.navodila, "opozorila": self.opozorila,
+                "zamuda_prometa_s": round(self.zamuda_prometa_s)}
 
 
 def zracna_razdalja_m(a: tuple, b: tuple) -> float:
@@ -121,7 +126,8 @@ class TomTom(_HttpPonudnik):
         for poskus in (1, 2):
             async with self.omejevalnik:
                 r = await self.http.get(url, params={"key": kljuc, "traffic": "true", "routeType": "fastest",
-                                                     "travelMode": "car"})
+                                                     "travelMode": "car", "sectionType": "traffic",
+                                                     "instructionsType": "text", "language": "sl-SI"})
             if r.status_code == 429 or (r.status_code == 403 and "rate" in r.text.lower()):
                 if poskus == 1:
                     await asyncio.sleep(min(1.0, float(r.headers.get("retry-after", 0.5) or 0.5)))
@@ -137,7 +143,37 @@ class TomTom(_HttpPonudnik):
         route = r.json()["routes"][0]
         s = route["summary"]
         tocke = [[p["latitude"], p["longitude"]] for leg in route.get("legs", []) for p in leg.get("points", [])]
-        return Pot(s["travelTimeInSeconds"] * FAKTOR_TIPA.get(tip_enote, 1.0), s["lengthInMeters"], tocke, self.kakovost)
+        return Pot(s["travelTimeInSeconds"] * FAKTOR_TIPA.get(tip_enote, 1.0), s["lengthInMeters"], tocke, self.kakovost,
+                   navodila=_navodila(route), opozorila=_opozorila(route, tocke),
+                   zamuda_prometa_s=float(s.get("trafficDelayInSeconds", 0)))
+
+
+VRSTE_PROMETA = {"JAM": "zastoj", "ROAD_WORK": "dela na cesti", "ROAD_CLOSURE": "zaprta cesta", "OTHER": "promet"}
+
+
+def _navodila(route: dict) -> list[dict]:
+    out = []
+    for i in route.get("guidance", {}).get("instructions", []):
+        t = i.get("point", {})
+        out.append({"sporocilo": i.get("message", ""), "odmik_m": i.get("routeOffsetInMeters", 0), "ulica": i.get("street"),
+                    "manever": i.get("maneuver"), "lat": t.get("latitude"), "lon": t.get("longitude")})
+    return out
+
+
+def _opozorila(route: dict, tocke: list) -> list[dict]:
+    kum = [0.0]
+    for a, b in zip(tocke, tocke[1:]):
+        kum.append(kum[-1] + zracna_razdalja_m(a, b))
+    out = []
+    for sec in route.get("sections", []):
+        if sec.get("sectionType") != "TRAFFIC":
+            continue
+        i, j = sec.get("startPointIndex", 0), sec.get("endPointIndex", 0)
+        i, j = min(i, len(tocke) - 1), min(j, len(tocke) - 1)
+        out.append({"vrsta": VRSTE_PROMETA.get(sec.get("simpleCategory"), "promet"), "od_m": round(kum[i]), "do_m": round(kum[j]),
+                    "zamuda_s": sec.get("delayInSeconds", 0), "hitrost_kmh": sec.get("effectiveSpeedInKmh"),
+                    "lat": tocke[i][0] if tocke else None, "lon": tocke[i][1] if tocke else None})
+    return out
 
 
 class OpenRouteService(_HttpPonudnik):

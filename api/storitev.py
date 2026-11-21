@@ -500,7 +500,7 @@ class Center:
             opis = D.uveljavi(st, d)
         except D.NeveljavenDogodek as e:
             raise NapakaStoritve(str(e), 422) from e
-        d["stanje"] = "sprejeto"
+        d["stanje"] = "spremenjeno" if d.get("stanje") == "spremenjeno" else "sprejeto"
         d["opis"] = opis
         self.db.shrani("dogodek", d)
         self._shrani_stanje(st)

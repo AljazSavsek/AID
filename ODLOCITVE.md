@@ -1,7 +1,7 @@
 # Odločitve
 
-Obseg: **samo regijski dispečerski center**. Vse, kar se tiče reševalca na terenu, je izpuščeno
-(zaslon voznika/navigacija, premikanje enot po poteh, sporočila ekip `POST /sporocilo`, obveščanje javnosti).
+Obseg veje `voznik`: regijski center **in** zaslon voznika (skupni strežnik). Veja `regijski-center` vsebuje samo
+del za dispečerja; spodnje odločitve 1–2 veljajo zanjo. Obveščanje javnosti ni del nobene veje.
 Kjer specifikacija ni določala podrobnosti, je izbrana najpreprostejša rešitev, ki ne krši pravil iz razdelka 2.
 
 ## Splošno
@@ -51,3 +51,8 @@ Kjer specifikacija ni določala podrobnosti, je izbrana najpreprostejša rešite
 | 26 | `/interno/zdravje` zahteva glavo `X-Skrbnik-Zeton`, enako `AID_SKRBNIK_ZETON`; brez nastavljenega žetona je endpoint zaprt. | Pravilo 2.4 – imena ponudnikov samo za skrbnika. |
 | 27 | Karta in promet: strežniški posrednik `/ploscice/{karta,promet,nesrece}/{z}/{x}/{y}.png` (ključ `TOMTOM_MAP_KEY` ostane na strežniku, odgovor brez imena ponudnika, predpomnilnik 24 h / 2 min, varovalka 60 s). Ob napakah vmesnik preklopi na OSM/CARTO. Atribucija je nastavljiva (`AID_KARTA_ATRIBUCIJA`); pogoje ponudnika glede oznake na karti mora preveriti ekipa. | Pravili 2.4 in 2.7. |
 | 28 | Najbližja enota = najkrajši čas prihoda **s prometom** (Routing API s `traffic=true`), med prostimi enotami; ne zračna razdalja. Pot (`GET /pot`) se nariše po cestah na mini karti klica; plan se riše po cestah prek `POST /poti` (najprej ravna črta, nato geometrija). Gumb »Osveži po prometu« ponovno izračuna čase; če je zdaj hitrejša druga enota, je to le nov predlog (potrjena enota se ne zamenja). | Pravilo 2.1; zahteva uporabnika. |
+| 29 | (veja `voznik`) Zaslon voznika: `GET /voznik/{enota}` vrne naslednji korak iz **aktivnega** plana, pot po cestah, navodila (slovenščina) in opozorila o prometu iz odsekov poti. Podatki naloge so le potrjeni podatki klica. | Pravilo 2.1. |
+| 30 | (veja `voznik`) `POST /sporocilo` → AI poslušalec → dogodek s stanjem `predlagano` (vir `ekipa`); če AI ne navede vozila pri okvari, se predlaga pošiljatelj. Dispečer ga sprejme/spremeni/zavrne (`/dogodek/{id}/…`). | Razdelek 9 in pravilo 2.1. |
+| 31 | (veja `voznik`) Lokacijo pošilja vozilo (`POST /enota/{id}/lokacija`, WS `enota_premik`); v demu jo pošilja »Simuliraj vožnjo« (10× pospešeno). | Simulirana ura iz razdelka 12. |
+| 32 | (veja `voznik`) »Obveščenih v bližini« je simulacija in je tako tudi označena – v prototipu ni vira teh podatkov. | Ne izmišljujemo podatkov kot resničnih. |
+| 33 | Ime uporabnika gre v glavo `X-Uporabnik` URL-kodirano (šumniki v HTTP glavah niso dovoljeni). | Napaka pri imenih s č/š/ž. |
