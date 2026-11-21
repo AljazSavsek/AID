@@ -197,7 +197,11 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
     @r.post("/voznik/sporocilo")
     async def sporocilo_voznika(m: SporociloVhod, v: dict = Depends(voznik)):
         omeji_ekipo(v["enota"])
-        return C().ekipa.od_voznika(v["enota"], m.koda, m.besedilo)
+        s = C().ekipa.od_voznika(v["enota"], m.koda, m.besedilo)
+        if m.besedilo and not m.koda:
+            # specifikacija 9: besedilo ekipe -> AI -> PREDLOG dogodka (dispečer odloči)
+            s["predlog_ai"] = await C().ekipa.ai_predlog(v["enota"], m.besedilo)
+        return s
 
     @r.post("/voznik/sporocilo/{sporocilo_id}/prebrano")
     async def prebrano(sporocilo_id: str, v: dict = Depends(voznik)):

@@ -1,7 +1,14 @@
 # AID – regijski dispečerski center z AI poslušalcem
 
 Prototip za AdaHack 2026 (Epilogov izziv). **AI predlaga, dispečer odloča.**
-Obseg tega dela je samo regijski center; pogledi za reševalce na terenu niso vključeni (glej [ODLOCITVE.md](ODLOCITVE.md)).
+
+Veja `voznik` vsebuje **oba dela skupaj** na istem strežniku: regijski center (dispečer) in voznika
+(Flet aplikacija za telefon + spletni zaslon v vozilu). Veja `regijski-center` vsebuje samo del za dispečerja.
+
+| Zaslon | Naslov |
+|---|---|
+| Regijski center (dispečer) | <http://localhost:8000/> |
+| Reševalno vozilo (voznik) | <http://localhost:8000/voznik.html?enota=RV-2> |
 
 ```
 Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremeni / zavrne)
@@ -9,23 +16,43 @@ Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremen
            Geokodiranje → Usmerjanje (skrito, redundantno) → Planer (OR-Tools) → Predlog plana → Dispečer
 ```
 
-## Zagon
+## Zagon – vse naenkrat
 
 ```bash
 pip install -r requirements.txt
 ```
 
 ```bash
-uvicorn api.app:app --port 8000
+pip install -r aplikacija_voznik/requirements-razvoj.txt
 ```
-
-Odprite <http://localhost:8000/> in kliknite **SPREJMI KLIC** – predvaja se demo klic (padec z lestve, Celovška cesta).
-Brez ključev sistem dela v celoti lokalno: AI poslušalec s pravili, geokodiranje iz lokalnega registra, časi prihoda kot ocena.
-
-Simulator klica kot zunanji odjemalec (namesto VoIP):
+(drugi ukaz le za Flet aplikacijo voznika)
 
 ```bash
-python -m zajem.simulator --url http://localhost:8000 --hitrost 1
+python zazeni.py
+```
+
+Na Windows lahko dvokliknete `zazeni.bat`, na Macu/Linuxu `./zazeni.sh`. En ukaz zažene **strežnik**, odpre
+**zaslon dispečerja** in **spletni zaslon voznika** ter zažene **Flet aplikacijo voznika** (simuliran GPS).
+Ustavite s `Ctrl+C`. Možnosti: `--brez-flet`, `--enota RV-3`, `--port 8000`, `--javno` (telefon v istem omrežju).
+
+| Zaslon | Naslov | Prijava |
+|---|---|---|
+| Regijski center (dispečer) | <http://localhost:8000/> | ime dispečerja v glavi |
+| Reševalno vozilo (splet) | <http://localhost:8000/voznik.html> | enota + koda, npr. `RV-3` / `DEMO-RV3` |
+| Aplikacija voznika (Flet) | okno ali <http://localhost:8550> | enota + koda |
+
+Ena enota = ena naprava: prijava iste enote v drugi aplikaciji odjavi prejšnjo. Za demo prijavite spletni zaslon in
+Flet aplikacijo z različnima voziloma. Oba spletna zaslona lahko v Chromu/Edgu namestite kot aplikacijo
+(ikona »Namesti« v naslovni vrstici).
+
+**Demo potek:** dispečer sprejme klic → potrdi naslov, lokacijo, prioriteto in enoto → ODOBRI IN POŠLJI → potrdi plan
+→ voznik predlagane enote dobi nalogo, potrdi prejem, sporoča stanja (PREJETO → NA POTI → NA KRAJU …), »Simuliraj vožnjo«
+→ »Sporočilo centru: Vozilo je obstalo« → dispečer v »Plan in karta → Sporočila ekip« potrdi → nov plan.
+
+Samo strežnik (brez odpiranja oken):
+
+```bash
+uvicorn api.app:app --port 8000
 ```
 
 Testi:
@@ -70,11 +97,22 @@ prioritete in enote. **UREDI PODATKE** odpre vsa polja, **ODOBRI IN POŠLJI** up
 prioritetah, dodatni km, nepokrite naloge, razlaga), **Pokaži alternativo**, **Potrdi plan**, časovnica po enotah in ročni vnos
 dogodkov (okvara, megla, zmogljivost centra, prioriteta).
 
+## Zaslon voznika
+
+Nočna 3D karta s potjo po cestah (s prometom), navodila za zavijanje v slovenščini, kartice zgoraj levo
+(čas do prihoda, obveščeni v bližini – simulacija, opozorila v živo: zastoji na poti in obvestila centra) in naloga desno.
+Voznik vidi **samo naloge iz potrjenega plana in podatke, ki jih je potrdil dispečer**.
+
+- statusi **NA POTI → NA KRAJU → PREVZETO / DOSTAVLJENO** gredo dispečerju in v revizijo,
+- **Sporočilo centru** (npr. »Vozilo je obstalo. Oprema je še v njem.«) → AI predlaga dogodek → dispečer ga potrdi
+  v pogledu »Plan in karta« (Sporočila ekip) → planer predlaga nov plan → dispečer ga potrdi → vozilo dobi novo nalogo,
+- **Simuliraj vožnjo** (demo) premika vozilo po poti; dispečer vidi premik na karti.
+
 ## Moduli
 
 | Mapa | Vsebina |
 |---|---|
-| `api/` | FastAPI, WebSocket `/ws`, polling `/stanje`, storitev centra (`storitev.py`) |
+| `api/` | FastAPI, WebSocket `/ws`, polling `/stanje`, storitev centra (`storitev.py`), ekipa na terenu (`ekipa.py`) |
 | `dnevnik/` | podatkovni model, SQLite (WAL) in revizijska sled, izvoz JSON |
 | `poslusalec/` | AI poslušalec: shema, preverjanje dokazov, oblak → Ollama → pravila |
 | `geokodiranje/` | GURS → lokalni register → Nominatim → klik na karto |

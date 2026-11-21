@@ -86,6 +86,25 @@
     html: `<div style="width:26px;height:26px;border-radius:50%;background:${n.prioriteta <= 2 ? "#8A1525" : n.prioriteta === 3 ? "#5A6270" : "#8A919C"};color:#fff;font:800 11px Inter,sans-serif;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)">P${n.prioriteta}</div>`,
   });
 
+  const geometrije = new Map(), zahtevano = new Set();
+  const kljucOdseka = (a, b, tip) => `${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}|${tip}`;
+  async function naloziGeometrije(odseki) {
+    const edinstveni = [...new Map(odseki.map((o) => [o.kl, o])).values()].slice(0, 80);
+    edinstveni.forEach((o) => zahtevano.add(o.kl));
+    try {
+      const r = await AID.api("/poti", { metoda: "POST", telo: { odseki: edinstveni.map(({ od, do: d, tip }) => ({ od, do: d, tip })) } });
+      let ponovi = false;
+      r.forEach((x, i) => {
+        if (x.kakovost !== "ocena" && x.geometrija && x.geometrija.length > 2) geometrije.set(edinstveni[i].kl, x.geometrija);
+        else ponovi = true; // pot po cestah trenutno ni na voljo – ravna črta ni končna
+      });
+      if (ponovi) setTimeout(() => { edinstveni.forEach((o) => { if (!geometrije.has(o.kl)) zahtevano.delete(o.kl); }); izrisiKarto(); }, 20000);
+      izrisiKarto();
+    } catch (_) {
+      edinstveni.forEach((o) => zahtevano.delete(o.kl)); // poskusi ob naslednjem izrisu
+    }
+  }
+
   function izrisiKarto() {
     if (!karta) return;
     Object.values(sloji).forEach((s) => s.clearLayers());
@@ -98,16 +117,33 @@
       markerji[e.id] = L.marker([e.lat, e.lon], { icon: ikonaEnote(e), zIndexOffset: 1000 })
         .bindTooltip(() => `${esc(e.ime)} · ${STANJE[e.stanje] || e.stanje}<br>${esc(opisSignala(P.enote.find((x) => x.id === e.id) || e))}`).addTo(sloji.enote);
     });
+    const manjkajo = [];
     const poti = (plan, sloj, slog) => {
       if (!plan) return;
       Object.entries(plan.koraki_po_enoti).forEach(([eid, ks]) => {
         const e = P.enote.find((x) => x.id === eid);
         if (!e || !ks.length) return;
-        L.polyline([[e.lat, e.lon], ...ks.map((k) => [k.lat, k.lon])], slog).addTo(sloj);
+        // odseki po cestah (predpomnjeni); dokler geometrija ne pride, ravna črta
+        let prej = [e.lat, e.lon];
+        const tocke = [];
+        ks.forEach((k) => {
+          const kl = kljucOdseka(prej, [k.lat, k.lon], e.tip);
+          const g = geometrije.get(kl);
+          if (g) tocke.push(...g);
+          else {
+            tocke.push(prej, [k.lat, k.lon]);
+            // helikopter res leti po zraku – zanj ne iščemo poti po cestah
+            if (e.tip !== "helikopter" && !zahtevano.has(kl)) manjkajo.push({ kl, od: prej, do: [k.lat, k.lon], tip: e.tip });
+          }
+          prej = [k.lat, k.lon];
+        });
+        L.polyline(tocke, e.tip === "helikopter" ? { ...slog, weight: 2.5, dashArray: "2 7" } : slog)
+          .bindTooltip(e.tip === "helikopter" ? `${esc(e.id)} · zračna pot` : esc(e.id), { sticky: true }).addTo(sloj);
       });
     };
     poti(P.aktiven, sloji.aktiven, { color: "#1D2228", weight: 3, opacity: 0.55 });
     if (P.prikazan) poti(P.prikazan, sloji.predlog, { color: "#8A1525", weight: 4, dashArray: "8 6" });
+    if (manjkajo.length) naloziGeometrije(manjkajo);
     if (!izrisiKarto.prilagojeno) {
       const tocke = [...P.enote.filter((e) => e.tip !== "helikopter").map((e) => [e.lat, e.lon]),
         ...P.naloge.filter((n) => n.stanje === "odprta").map((n) => [n.prevzem.lat, n.prevzem.lon])];
