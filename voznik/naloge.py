@@ -383,7 +383,9 @@ class NalogeVoznikov:
         p = {"plan_id": plan["id"] if plan else None, "naloga_id": k["naloga_id"], "akcija": k["akcija"],
              "od": {"lat": e["lat"], "lon": e["lon"]}, "do": {"lat": k["lat"], "lon": k["lon"]},
              "cas_s": r["cas_s"], "razdalja_m": r["razdalja_m"], "geometrija": r["geometrija"], "kakovost": r["kakovost"],
-             "cestna": e["tip"] != "helikopter", "izracunano": self.ura(), "navodila": []}
+             "cestna": e["tip"] != "helikopter", "izracunano": self.ura(),
+             "navodila": r.get("navodila", []), "opozorila": r.get("opozorila", []),
+             "zamuda_prometa_s": r.get("zamuda_prometa_s", 0)}
         if self.trenutni(enota_id) != k:
             return None  # med računanjem se je korak spremenil
         self.db.izvedi("INSERT INTO voznik_pot VALUES (?,?) ON CONFLICT(enota_id) DO UPDATE SET podatki=excluded.podatki",

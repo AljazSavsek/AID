@@ -194,3 +194,9 @@ def test_websocket(odjemalec):
         assert ws.receive_json()["tip"] == "klic"
         cl.post(f"/klic/{kid}/segment", json=SEGMENTI[1])
         assert ws.receive_json()["tip"] == "segment"
+
+
+def test_ime_s_sumniki_v_glavi(odjemalec):
+    from urllib.parse import quote
+    kid = odjemalec.post("/klic/zacni", json={}, headers={"X-Uporabnik": quote("Žiga Čeč")}).json()["id"]
+    assert odjemalec.get("/revizija", params={"objekt_id": kid}).json()[0]["uporabnik"] == "Žiga Čeč"

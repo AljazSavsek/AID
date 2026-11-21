@@ -50,6 +50,24 @@ nalozi_env()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
+class _SkrijKljuce(logging.Filter):
+    """API ključi (key=… v URL) nikoli ne pridejo v dnevnik."""
+    import re as _re
+    _vzorec = _re.compile(r"(key=)[^&\s\"']+")
+
+    def filter(self, zapis: logging.LogRecord) -> bool:
+        zapis.msg = self._vzorec.sub(r"\1***", str(zapis.msg))
+        if zapis.args:
+            zapis.args = tuple(self._vzorec.sub(r"\1***", str(a)) if isinstance(a, str) or "key=" in str(a) else a
+                               for a in (zapis.args if isinstance(zapis.args, tuple) else (zapis.args,)))
+        return True
+
+
+for _ime in ("httpx", "httpcore", "usmerjanje", "karta", "geokodiranje", "poslusalec"):
+    logging.getLogger(_ime).addFilter(_SkrijKljuce())
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 # ---------- telesa zahtev ----------
 class ZacniKlic(BaseModel):
     stevilka: str | None = None
@@ -83,12 +101,23 @@ class DogodekVhod(BaseModel):
     parametri: dict = {}
 
 
+class Odsek(BaseModel):
+    od: tuple[float, float]
+    do: tuple[float, float]
+    tip: str = Field(default="vozilo", pattern="^(vozilo|motorist|helikopter)$")
+
+
+class OdsekiVhod(BaseModel):
+    odseki: list[Odsek] = Field(max_length=80)
+
+
 class DemoKlic(BaseModel):
     hitrost: float = 1.0
 
 
 def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
-    return (x_uporabnik or "dispečer").strip()[:60]
+    from urllib.parse import unquote
+    return (unquote(x_uporabnik) if x_uporabnik else "dispečer").strip()[:60]
 
 
 def preveri_skrbnika(x_skrbnik_zeton: str | None = Header(default=None)) -> None:
@@ -275,6 +304,18 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     async def eta(lat: float, lon: float, n: int = 3):
         return await C().eta_enot(lat, lon, n)
 
+    @app.get("/pot")
+    async def pot(enota_id: str, lat: float, lon: float):
+        return await C().pot_enote(enota_id, lat, lon)
+
+    @app.post("/poti")
+    async def poti(v: OdsekiVhod):
+        return await C().poti([o.model_dump() for o in v.odseki])
+
+    @app.post("/klic/{klic_id}/najblizja")
+    async def najblizja(klic_id: str, u: str = Depends(uporabnik)):
+        return await C().osvezi_najblizjo(klic_id, u)
+
     @app.get("/revizija")
     async def revizija(objekt_id: str | None = None, omejitev: int = 300):
         return C().db.revizije(objekt_id, omejitev)
@@ -286,7 +327,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         # položaji niso v zgodovini dogodkov (enota_premik je samo WS) -> posnetek za polling
         polozaji = [{"enota_id": e["id"], "lat": e["lat"], "lon": e["lon"], **e["polozaj"]} for e in c.enote()]
         return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo,
-                "cas": time.time(), "polozaji": polozaji}
+                "kakovost_poti": c.usmerjanje.javna_kakovost(), "cas": time.time(), "polozaji": polozaji}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
@@ -318,8 +359,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
 
     @app.get("/ploscice/stanje")
     async def ploscice_stanje():
-        na = ploscice.na_voljo()
-        return {"karta": na, "promet": na,
+        return {"karta": ploscice.na_voljo("karta"), "promet": ploscice.na_voljo("promet"),
                 "atribucija": os.environ.get("AID_KARTA_ATRIBUCIJA", "Podlaga karte in promet: zunanji vir")}
 
     @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")

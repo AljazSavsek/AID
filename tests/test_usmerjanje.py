@@ -35,7 +35,7 @@ def run(k):
 def test_primarni_odgovori():
     r = run(servis(Lazen("tomtom", 300), Lazen("ors", 320, kakovost="brez prometa")).izracunaj(OD, DO))
     assert r["cas_s"] == 300 and r["kakovost"] == "natančno"
-    assert set(r) == {"cas_s", "razdalja_m", "geometrija", "kakovost"}
+    assert set(r) == {"cas_s", "razdalja_m", "geometrija", "kakovost", "navodila", "opozorila", "zamuda_prometa_s"}
 
 
 @pytest.mark.parametrize("izklopljen", [0, 1, 2])
@@ -120,3 +120,53 @@ def test_matrika():
 def test_zdravje_vsebuje_imena_samo_interno():
     s = servis(Lazen("tomtom"))
     assert "tomtom" in s.zdravje()
+
+
+def test_omejitev_hitrosti_ne_izklopi_ponudnika():
+    from usmerjanje.ponudniki import Omejitev
+
+    class Omejen(Lazen):
+        async def izracunaj(self, od, do, tip):
+            self.klici += 1
+            raise Omejitev("429")
+
+    a = Omejen("tomtom")
+    s = servis(a)
+    for i in range(6):
+        r = run(s.izracunaj((46 + i / 100, 14.5), DO))
+        assert r["kakovost"] == "ocena"
+    assert s.varovalke["tomtom"].stanje == "zaprta" and a.klici == 6
+
+
+def test_omejevalnik_razmakne_zahteve():
+    import time
+    from usmerjanje.ponudniki import Omejevalnik
+    om = Omejevalnik(hkrati=2, na_sekundo=10)
+
+    async def ena():
+        async with om:
+            return time.perf_counter()
+
+    async def vse():
+        return await asyncio.gather(*(ena() for _ in range(5)))
+
+    casi = sorted(run(vse()))
+    assert casi[-1] - casi[0] >= 0.35  # 5 zahtev pri 10/s
+
+
+def test_ni_poti_in_isti_kraj_ne_izklopita_ponudnika():
+    from usmerjanje.ponudniki import NiPoti
+
+    class Brez(Lazen):
+        async def izracunaj(self, od, do, tip):
+            self.klici += 1
+            raise NiPoti("NO_ROUTE_FOUND")
+
+    a = Brez("tomtom")
+    s = servis(a)
+    for i in range(5):
+        run(s.izracunaj((45.8 + i / 100, 15.1), DO))
+    assert s.varovalke["tomtom"].stanje == "zaprta"
+    # enota je že na cilju: brez klica ponudnika, čas 0
+    r = run(s.izracunaj(DO, DO))
+    assert r["cas_s"] == 0 and a.klici == 5

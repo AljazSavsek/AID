@@ -72,6 +72,31 @@ class Ekipa:
                                                "sporocilo": f"{enota_id}: {s['besedilo'].upper()}"})
         return s
 
+    async def ai_predlog(self, enota_id: str, besedilo: str) -> dict | None:
+        """Prosto besedilo ekipe -> AI poslušalec -> predlog dogodka (npr. »Vozilo je obstalo«).
+        AI samo predlaga: predlog gre skozi `predlagaj` in čaka na dispečerja. Brez AI -> None."""
+        seg = {"id": "ekipa", "govorec": "klicatelj", "od_s": 0.0, "do_s": 0.0, "besedilo": besedilo}
+        try:
+            izhod = await self.c.poslusalec.obdelaj([seg], [], [], [])
+        except Exception:  # noqa: BLE001 – AI ni nujen; sporočilo je že dostavljeno
+            return None
+        for z in (izhod or {}).get("zaznani_dogodki", []):
+            if z["tip"] != "okvara_vozila":
+                continue
+            if z["parametri"].get("enota_id") not in (None, enota_id):
+                continue  # o drugem vozilu odloča dispečer iz sporočila
+            try:
+                d = self.predlagaj(enota_id, "okvara_vozila", {"opis": besedilo})
+            except NapakaEkipe:
+                return None  # že čaka ali enota je že v okvari
+            d.update(dokazi=z["dokazi"], zaupanje=z["zaupanje"], predlagal=f"AI iz sporočila {enota_id}")
+            if z["parametri"].get("tovor_ostane") is False:
+                d["parametri"]["tovor_ostane"] = False
+            self.db.shrani("dogodek", d)
+            self.db.revizija("AI poslušalec", "Dogodek", d["id"], "predlog_ai", None, {"iz_sporocila": besedilo, "dokazi": z["dokazi"]})
+            return {"id": d["id"], "tip": d["tip"]}
+        return None
+
     def od_dispecerja(self, enota_id: str, uporabnik: str, koda: str | None, besedilo: str | None) -> dict:
         if not self.db.beri("enota", enota_id):
             raise NapakaEkipe("enota ne obstaja", 404)

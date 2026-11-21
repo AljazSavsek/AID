@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AID · Regijski center</title>
   <link rel="icon" href="img/aid-logo.svg">
+  <link rel="manifest" href="manifest-center.webmanifest">
+  <link rel="apple-touch-icon" href="img/ikona-center-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -21,6 +23,7 @@
     <button data-pogled="plan">Plan in karta <span class="znacka rdeca skrito" id="znacka-plan">nov predlog</span></button>
   </nav>
   <div class="desno">
+    <a class="gumb majhen" href="voznik.html" target="_blank" rel="noopener" title="Demo: zaslon v reševalnem vozilu">Zaslon vozila ↗</a>
     <button class="gumb majhen" id="gumb-revizija">Revizijska sled</button>
     <span class="povezava" id="povezava">Povezovanje …</span>
     <label class="uporabnik" title="Prijavljeni dispečer"><span class="avatar" id="avatar">MN</span>
@@ -111,6 +114,7 @@
           <div id="mini-karta" class="mini-karta"></div>
           <div class="mini-karta-namig">Klik na karto = ročna lokacija</div>
         </div>
+        <div class="pot-povzetek" id="pot-povzetek" aria-live="polite"></div>
         <div id="kartice"></div>
       </div>
       <div class="obrazec-noga">
@@ -190,5 +194,6 @@
 <script src="js/klic.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/ekipe.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>
