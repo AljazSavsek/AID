@@ -693,5 +693,5 @@
     }
     izrisiVrsto(); izrisiTelefon(); izrisiVse();
   }
-  document.addEventListener("DOMContentLoaded", zagon);
+  document.addEventListener("DOMContentLoaded", () => AID.prijava.then(zagon));
 })();

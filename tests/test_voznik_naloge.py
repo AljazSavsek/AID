@@ -1,6 +1,5 @@
 """Voznik M2: naloga iz aktivnega plana, dovoljeni prehodi stanj, potrditev prejema z razliko,
 pot za trenutni korak, WebSocket in polling za napravo."""
-import time
 
 import pytest
 from fastapi.testclient import TestClient

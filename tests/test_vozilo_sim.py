@@ -1,5 +1,4 @@
 """Simulator vozila (M4): celoten krog brez strojne opreme in izpad omrežja med vožnjo."""
-import time
 
 import httpx
 import pytest
@@ -72,4 +71,6 @@ def test_neodziven_voznik_eskalira(okolje):
     cl.portal.call(v.tek, 0.5)
     o = c.naloge_voznikov.zadnje_obvestilo("RV-2")
     assert o["stanje"] == "caka"
-    assert "RV-2" in {e["enota_id"] for e in c.naloge_voznikov.eskalacije()}  # ob potrditvi plana ni bil prijavljen
+    # ob potrditvi plana RV-2 še ni imel naprave (brez lažnega alarma); po prijavi brez potrditve -> eskalacija po roku
+    c.naloge_voznikov.preveri_eskalacije(o["rok"] + 1)
+    assert {e["enota_id"]: e["razlog"] for e in c.naloge_voznikov.eskalacije()}.get("RV-2") == "ni_potrditve"

@@ -98,33 +98,44 @@ class Poslusalec:
         self.viri = viri if viri is not None else [OblakLLM(), OllamaLLM(), Pravila()]
         self.zadnji_vir: str | None = None  # samo za interno zdravje
         self.simuliran_izpad = False         # demo: izpad vseh virov
+        self.napake: dict[str, str] = {}     # zadnja napaka po viru (interno zdravje)
+        self.rezerva = False                 # True, ko je nastavljen boljši vir odpovedal in dela rezerva
 
     async def obdelaj(self, segmenti: list[dict], predlogi: list[dict], enote: list[dict], centri: list[dict]) -> dict | None:
         """Vrne očiščen izhod ali None (brez predlogov -> ročni vnos)."""
         if not segmenti or self.simuliran_izpad:
             return None
         vhod = sestavi_vhod(segmenti, predlogi, enote, centri)
+        odpovedali = []
         for vir in self.viri:
             if not vir.na_voljo():
                 continue
             if isinstance(vir, Pravila):
                 trenutni = {p["polje"]: p["vrednost"] for p in predlogi if p["stanje"] in ("predlagano", "sprejeto", "spremenjeno")}
                 self.zadnji_vir = vir.ime
+                self.rezerva = bool(odpovedali)
                 return validiraj(pravila.izlusci(segmenti, trenutni), segmenti)
             for poskus in (1, 2):  # neveljaven JSON -> ponovi enkrat
                 try:
                     besedilo = await vir.poklici(vhod)
                     izhod = validiraj(json.loads(besedilo), segmenti)
                     self.zadnji_vir = vir.ime
+                    self.rezerva = bool(odpovedali)
+                    self.napake.pop(vir.ime, None)
                     return izhod
                 except (json.JSONDecodeError, NeveljavenIzhod) as e:
                     dnevnik.warning("%s: neveljaven izhod (poskus %d): %s", vir.ime, poskus, e)
+                    self.napake[vir.ime] = f"neveljaven izhod: {e}"[:300]
                 except (asyncio.TimeoutError, httpx.HTTPError) as e:
                     dnevnik.warning("%s: ni dosegljiv: %s", vir.ime, e)
+                    self.napake[vir.ime] = f"ni dosegljiv: {e}"[:300]
                     break
-                except Exception as e:  # noqa: BLE001 – napake SDK, omrežja ...
-                    dnevnik.warning("%s: napaka: %s", vir.ime, e)
+                except Exception as e:  # noqa: BLE001 – napake SDK (napačna različica, ključ, model …) niso tihe
+                    dnevnik.error("%s: napaka: %r", vir.ime, e)
+                    self.napake[vir.ime] = f"napaka: {e!r}"[:300]
                     break
+            odpovedali.append(vir.ime)
         self.zadnji_vir = None
+        self.rezerva = bool(odpovedali)
         dnevnik.error("AI poslušalec ni na voljo – brez predlogov (ročni vnos)")
         return None

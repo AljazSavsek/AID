@@ -194,7 +194,10 @@ async def _main(a) -> None:
     enote = [e.strip().upper() for e in a.enote.split(",") if e.strip()]
     if not enote:
         async with httpx.AsyncClient(base_url=a.url, timeout=10) as c:
-            plan = (await c.get("/plan/aktiven")).json() or {}
+            r = await c.get("/plan/aktiven")
+        if r.status_code == 401:  # plan vidi le prijavljen dispečer
+            raise SystemExit("Podajte vozila, npr. --enote RV-1,RV-4.")
+        plan = r.json() or {}
         enote = [e for e, ks in plan.get("koraki_po_enoti", {}).items() if ks and not e.startswith("HELI")][:3]
     izpad = tuple(float(x) for x in a.izpad.split(":")) if a.izpad else None
     ne = {x.strip().upper() for x in a.ne_potrdi.split(",") if x.strip()}

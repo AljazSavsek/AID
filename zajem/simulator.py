@@ -33,9 +33,12 @@ async def predvajaj(segmenti: list[dict], poslji, hitrost: float = 1.0, prekini=
         prej = seg["do_s"]
 
 
-async def _main(url: str, hitrost: float, pot: str, wav: str | None) -> None:
+async def _main(url: str, hitrost: float, pot: str, wav: str | None, ime: str, geslo: str) -> None:
     async with httpx.AsyncClient(base_url=url, timeout=10) as c:
-        klic = (await c.post("/klic/zacni", json={"stevilka": "+386 41 555 238"}, headers={"X-Uporabnik": "simulator"})).json()
+        r = await c.post("/dispecer/prijava", json={"ime": ime, "geslo": geslo})  # piškotek seje ostane v odjemalcu
+        if r.status_code != 200:
+            raise SystemExit(f"Prijava dispečerja ni uspela ({r.status_code}): podajte --ime in --geslo.")
+        klic = (await c.post("/klic/zacni", json={"stevilka": "+386 41 555 238"})).json()
         print("klic", klic["id"])
         if wav:
             from prepis.stt import Prepis
@@ -60,5 +63,7 @@ if __name__ == "__main__":
     ap.add_argument("--hitrost", type=float, default=1.0)
     ap.add_argument("--klic", default=str(KOREN / "demo" / "klic1.json"))
     ap.add_argument("--wav")
+    ap.add_argument("--ime", default="M. Novak", help="dispečer (demo račun iz scenarija)")
+    ap.add_argument("--geslo", default="DEMO-DISP")
     a = ap.parse_args()
-    asyncio.run(_main(a.url, a.hitrost, a.klic, a.wav))
+    asyncio.run(_main(a.url, a.hitrost, a.klic, a.wav, a.ime, a.geslo))

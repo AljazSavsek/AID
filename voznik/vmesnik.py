@@ -93,7 +93,7 @@ class PaketPolozajev(BaseModel):
     fiksi: list[Fiks] = Field(min_length=1, max_length=200)
 
 
-def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
+def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable, uporabnik_dep: Callable | None = None) -> APIRouter:
     r = APIRouter()
     omejitev_prijava: dict = {}
     omejitev_polozaj: dict = {}
@@ -266,8 +266,11 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
             o.narocniki.get(v["enota"], set()).discard(q)
 
     # ---------- dispečer: ekipe ----------
-    def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
+    # ime dispečerja pride iz prijavljene seje (api/dispecer.py), ne iz glave odjemalca
+    def _iz_glave(x_uporabnik: str | None = Header(default=None)) -> str:  # le za samostojno rabo usmerjevalnika
         return (x_uporabnik or "dispečer").strip()[:60]
+
+    uporabnik = uporabnik_dep or _iz_glave
 
     @r.get("/ekipe/predlogi")
     async def predlogi_ekip(vsi: bool = False):

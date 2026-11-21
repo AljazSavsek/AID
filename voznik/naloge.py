@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
+import os
 import logging
 import secrets
 import time
@@ -292,7 +293,9 @@ class NalogeVoznikov:
                     self._izracunaj_pot_v_ozadju(eid)
             self.objava.objavi(eid, "plan", {"obvestilo": o})
             self.c.objava.objavi("voznik_obvestilo", {k: o[k] for k in ("id", "enota_id", "plan_id", "stanje", "rok", "razlike")})
-            if o["stanje"] == "caka" and (eid not in prijavljene or signali.get(eid) == "ni_signala"):
+            if o["stanje"] == "caka" and self._brez_naprave_v_izmeni(eid):
+                pass  # enota nima aplikacije: dispečer jo vodi po radiu, alarm bi bil lažen (ODLOCITVE #60)
+            elif o["stanje"] == "caka" and (eid not in prijavljene or signali.get(eid) == "ni_signala"):
                 # voznik obvestila ne more prejeti -> dispečer izve takoj, ne šele po roku
                 takoj.append(self._eskaliraj(o, "voznik_ni_prijavljen" if eid not in prijavljene else "ni_signala", objavi_opozorilo=False))
         if takoj:
@@ -316,7 +319,13 @@ class NalogeVoznikov:
         """Nepotrjena obvestila po roku -> eskalacija (enkrat na obvestilo)."""
         zdaj = self.ura() if zdaj is None else zdaj
         vr = self.db.izvedi("SELECT * FROM voznik_obvestilo WHERE stanje='caka' AND eskalirano IS NULL AND rok < ?", (zdaj,))
-        return [self._eskaliraj(dict(r), "ni_potrditve") for r in vr]
+        return [self._eskaliraj(dict(r), "ni_potrditve") for r in vr if not self._brez_naprave_v_izmeni(r["enota_id"])]
+
+    def _brez_naprave_v_izmeni(self, enota_id: str) -> bool:
+        """Enota v tej izmeni še ni imela prijavljene naprave (AID_ESKALACIJA_BREZ_NAPRAVE=1 vklopi alarm tudi zanje)."""
+        if os.environ.get("AID_ESKALACIJA_BREZ_NAPRAVE") == "1":
+            return False
+        return enota_id not in self.c.avtentikacija.z_napravo()
 
     def eskalacije(self) -> list[dict]:
         vr = self.db.izvedi("SELECT * FROM voznik_obvestilo WHERE stanje='caka' AND eskalirano IS NOT NULL ORDER BY eskalirano")
@@ -423,6 +432,7 @@ class NalogeVoznikov:
         k = self.trenutni(enota_id)
         o = self.zadnje_obvestilo(enota_id)
         return {"prijavljen": enota_id in self.c.avtentikacija.prijavljena(),
+                "brez_naprave": self._brez_naprave_v_izmeni(enota_id),
                 "korak": {"naloga_id": k["naloga_id"], "akcija": k["akcija"]} if k else None,
                 "faza": self.faza(enota_id, k) if k else None,
                 "obvestilo": {"id": o["id"], "stanje": o["stanje"], "rok": o["rok"], "potrjeno": o["potrjeno"],

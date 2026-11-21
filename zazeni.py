@@ -29,7 +29,7 @@ def caka_strežnik(url: str, rok_s: float = 90) -> bool:
     konec = time.time() + rok_s
     while time.time() < konec:
         try:
-            with urllib.request.urlopen(url + "/stanje", timeout=2) as r:
+            with urllib.request.urlopen(url + "/voznik/enote-za-prijavo", timeout=2) as r:  # javna pot (ostalo zahteva prijavo)
                 if r.status == 200:
                     return True
         except Exception:  # noqa: BLE001
@@ -39,6 +39,42 @@ def caka_strežnik(url: str, rok_s: float = 90) -> bool:
 
 def ima_zaslon() -> bool:
     return platform.system() in ("Windows", "Darwin") or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def skrivnosti() -> dict:
+    """Skrivnosti za podpis žetonov (voznik, dispečer): iz okolja/.env, sicer ustvarjene enkrat in shranjene
+    v podatki/.skrivnosti.json (ni v gitu) – prijave tako preživijo ponovni zagon."""
+    import secrets
+    pot = KOREN / "podatki" / ".skrivnosti.json"
+    env_datoteka = {}
+    if (KOREN / ".env").exists():
+        for v in (KOREN / ".env").read_text(encoding="utf-8").splitlines():
+            if "=" in v and not v.strip().startswith("#"):
+                k, x = v.split("=", 1)
+                env_datoteka[k.strip()] = x.strip()
+    shranjeno = {}
+    try:
+        shranjeno = json.loads(pot.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    out = {}
+    for k in ("AID_VOZNIK_SKRIVNOST", "AID_DISPECER_SKRIVNOST"):
+        out[k] = os.environ.get(k) or env_datoteka.get(k) or shranjeno.get(k) or secrets.token_hex(32)
+    if out != {k: shranjeno.get(k) for k in out}:
+        pot.parent.mkdir(parents=True, exist_ok=True)
+        pot.write_text(json.dumps(out), encoding="utf-8")
+        try:
+            os.chmod(pot, 0o600)
+        except OSError:
+            pass
+    return out
+
+
+def demo_dispecerji() -> list:
+    try:
+        return json.loads((KOREN / "demo" / "scenarij.json").read_text(encoding="utf-8")).get("dispecerji", [])
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def demo_kode() -> dict:
@@ -79,7 +115,8 @@ def main() -> int:
     signal.signal(signal.SIGTERM, ustavi)
 
     print(f"▶ Zaganjam strežnik na {url} …")
-    procesi.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "api.app:app", "--host", host, "--port", str(a.port)], cwd=KOREN))
+    procesi.append(subprocess.Popen([sys.executable, "-m", "uvicorn", "api.app:app", "--host", host, "--port", str(a.port)],
+                                    cwd=KOREN, env={**os.environ, **skrivnosti()}))
     if not caka_strežnik(url):
         print("✖ Strežnik se ni zagnal – preverite izpis zgoraj.")
         ustavi()
@@ -113,6 +150,7 @@ def main() -> int:
     print("  AID teče. Odprite:")
     print(f"  • Regijski center (dispečer):  {dispecer}")
     print(f"  • Zaslon voznika (splet):      {voznik}")
+    print(f"  • Opozorilo za javnost:        {url}/javnost.html  (klik na karto = vaša lokacija)")
     if flet_url:
         print(f"  • Aplikacija voznika (Flet):   {flet_url}")
     elif len(procesi) > 1:
@@ -121,6 +159,9 @@ def main() -> int:
         print("  • Simulirana vozila:          " + ", ".join(sim) + " (ena enota = ena naprava: ne prijavljajte jih drugje)")
     if kode:
         print("  Demo kode vozil: " + ", ".join(f"{k}={v}" for k, v in kode.items()))
+    disp = demo_dispecerji() if os.environ.get("AID_DISPECER_DEMO", "1") == "1" else []
+    if disp:
+        print("  Prijava dispečerja: " + ", ".join(f"{d['ime']} / {d['geslo']}" for d in disp))
     print("  Ustavite s Ctrl+C.")
     print("═" * 64 + "\n")
     if not a.brez_brskalnika:

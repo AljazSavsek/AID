@@ -21,7 +21,8 @@
   function zacniKarto() {
     if (!window.L || karta) return;
     karta = L.map("karta", { zoomControl: true }).setView([46.056, 14.505], 12);
-    AID.podlagaKarte(karta, { promet: true }).then(({ promet }) => {
+    AID.podlagaKarte(karta, { promet: true }).then((izid) => {
+      const { promet } = izid;
       if (!promet) return;
       // stikalo »Promet« (zastoji in nesreče) – privzeto vklopljeno
       promet.addTo(karta);
@@ -34,7 +35,8 @@
           return d;
         },
       });
-      new Stikalo({ position: "topright" }).addTo(karta);
+      const stikalo = new Stikalo({ position: "topright" }).addTo(karta);
+      izid.onIzpad = () => stikalo.remove();
     });
     ["centri", "naloge", "aktiven", "predlog", "enote"].forEach((k) => (sloji[k] = L.layerGroup().addTo(karta)));
   }
@@ -367,6 +369,7 @@
   setInterval(() => { if (!$("pogled-plan").classList.contains("skrito")) { izrisiEnote(); izrisiCasovnico(); } }, 30000);
 
   document.addEventListener("DOMContentLoaded", async () => {
+    await AID.prijava;
     if (!$("pogled-plan").classList.contains("skrito")) zacniKarto();
     await osvezi();
     try { const p = await AID.api("/plan/predlog"); if (p) await nastaviPredlog(p); } catch (_) {}

@@ -52,6 +52,7 @@
      "dostava": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana", "center_id": "C-UKC"},
      "okno_od": 60, "okno_do": 240, "kolicina": {"pacienti": 1, "oprema": 0}}
   ],
+  "dispecerji": [{"ime": "M. Novak", "geslo": "DEMO-DISP"}, {"ime": "A. Kos", "geslo": "DEMO-DISP2"}],
   "kode_voznikov": {"RV-1": "DEMO-RV1", "RV-2": "DEMO-RV2", "RV-3": "DEMO-RV3", "RV-4": "DEMO-RV4",
                     "MOT-1": "DEMO-MOT1", "MOT-2": "DEMO-MOT2", "HELI-1": "DEMO-HELI"},
   "cakajoci_klici": [

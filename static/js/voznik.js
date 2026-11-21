@@ -63,8 +63,9 @@
     $("prijava").classList.remove("skrito");
     $("napaka-prijave").textContent = sporocilo || "";
     try {
-      const enote = await api("/enote", { brezZetona: true });
-      const prej = AID.beri("aid_voznik_enota", new URLSearchParams(location.search).get("enota"));
+      const enote = await api("/voznik/enote-za-prijavo", { brezZetona: true });
+      // vozilo iz naslova (?enota=RV-3) ima prednost pred zadnjim uporabljenim
+      const prej = new URLSearchParams(location.search).get("enota") || AID.beri("aid_voznik_enota", null);
       $("prijava-enota").innerHTML = enote.map((e) => `<option value="${esc(e.id)}" ${e.id === prej ? "selected" : ""}>${esc(e.id)} · ${esc(e.ime)}</option>`).join("");
     } catch (_) {}
     $("prijava-koda").focus();
@@ -97,10 +98,13 @@
   async function zacniKarto() {
     if (karta || !window.maplibregl) return;
     let st = { karta: false };
-    try { st = await api("/ploscice/stanje", { brezZetona: true }); } catch (_) {}
+    try { st = await api("/ploscice/stanje"); } catch (_) {}
     const rezerva = ["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"];
     const ploscice = st.karta ? [location.origin + "/ploscice/karta-nocna/{z}/{x}/{y}.png"] : rezerva;
     karta = new maplibregl.Map({
+      // ploščice posrednika zahtevajo prijavo: žeton voznika v glavi (ne v URL – dnevniki)
+      transformRequest: (url) => (url.startsWith(location.origin + "/ploscice/") && seja.get()
+        ? { url, headers: { Authorization: "Bearer " + seja.get().dostop } } : undefined),
       container: "karta", center: [14.5058, 46.0569], zoom: 14, pitch: 55, bearing: 0, attributionControl: { compact: true },
       style: { version: 8, sources: { podlaga: { type: "raster", tiles: ploscice, tileSize: 256, attribution: st.karta ? esc(st.atribucija || "") : "© OpenStreetMap, © CARTO" } },
         layers: [{ id: "ozadje", type: "background", paint: { "background-color": "#14181C" } },

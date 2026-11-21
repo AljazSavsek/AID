@@ -1,7 +1,5 @@
 """Spletni zaslon voznika in AI iz besedila ekipe (zavarovano z žetonom voznika).
 Spletni zaslon voznika uporablja isti API kot Flet aplikacija."""
-from urllib.parse import quote
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -66,8 +64,10 @@ def test_naloga_voznika_ima_navodila_in_opozorila(cl):
     assert brez_ponudnikov(str(n)) == []
 
 
-def test_ime_s_sumniki_v_glavi(cl):
-    kid = cl.post("/klic/zacni", json={}, headers={"X-Uporabnik": quote("Žiga Čeč")}).json()["id"]
+def test_ime_iz_seje_s_sumniki_glava_se_ne_uposteva(cl):
+    from conftest import prijavi
+    prijavi(cl, "Žiga Čeč")
+    kid = cl.post("/klic/zacni", json={}, headers={"X-Uporabnik": "Ponarejen"}).json()["id"]
     assert cl.get("/revizija", params={"objekt_id": kid}).json()[0]["uporabnik"] == "Žiga Čeč"
 
 

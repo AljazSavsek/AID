@@ -49,11 +49,8 @@ class LokalniWhisper:
         self._model = None
 
     def na_voljo(self) -> bool:
-        try:
-            import faster_whisper  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        import importlib.util
+        return importlib.util.find_spec("faster_whisper") is not None
 
     def prepisi_datoteko(self, pot: str) -> Iterable[DelPrepisa]:
         if not self.na_voljo():

@@ -196,7 +196,8 @@ def test_websocket(odjemalec):
         assert ws.receive_json()["tip"] == "segment"
 
 
-def test_ime_s_sumniki_v_glavi(odjemalec):
-    from urllib.parse import quote
-    kid = odjemalec.post("/klic/zacni", json={}, headers={"X-Uporabnik": quote("Žiga Čeč")}).json()["id"]
+def test_ime_iz_seje_s_sumniki_glava_se_ne_uposteva(odjemalec):
+    from conftest import prijavi
+    prijavi(odjemalec, "Žiga Čeč")
+    kid = odjemalec.post("/klic/zacni", json={}, headers={"X-Uporabnik": "Ponarejen"}).json()["id"]
     assert odjemalec.get("/revizija", params={"objekt_id": kid}).json()[0]["uporabnik"] == "Žiga Čeč"
