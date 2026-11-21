@@ -40,11 +40,12 @@ class Ploscice:
         self._predpomnilnik: collections.OrderedDict[tuple, tuple[float, bytes]] = collections.OrderedDict()
         self._najvec = najvec
         self._odjemalec = odjemalec
-        self.napake = 0
-        self.izklop_do = 0.0
+        self.napake: dict[str, int] = {}
+        self.izklop_do: dict[str, float] = {}
 
-    def na_voljo(self) -> bool:
-        return bool(kljuc()) and time.time() >= self.izklop_do
+    def na_voljo(self, sloj: str = "karta") -> bool:
+        """Vsak sloj ima svojo varovalko (napaka prometa ne izklopi osnovne karte)."""
+        return bool(kljuc()) and time.time() >= self.izklop_do.get(sloj, 0.0)
 
     @property
     def http(self) -> httpx.AsyncClient:
@@ -62,7 +63,7 @@ class Ploscice:
             if zdaj < potece:
                 self._predpomnilnik.move_to_end(k)
                 return vsebina
-        if not self.na_voljo():
+        if not self.na_voljo(sloj):
             if k in self._predpomnilnik:  # ob izpadu je stara ploščica boljša kot nič
                 return self._predpomnilnik[k][1]
             raise NiNaVoljo("ni ključa ali je izločen")
@@ -72,14 +73,17 @@ class Ploscice:
             if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image/"):
                 raise NiNaVoljo(f"HTTP {r.status_code}")
         except (httpx.HTTPError, NiNaVoljo) as e:
-            self.napake += 1
-            if self.napake >= 5:  # varovalka: 60 s brez klicev
-                self.izklop_do, self.napake = zdaj + 60, 0
-                dnevnik.error("ploščice karte izločene za 60 s: %s", e)
+            # 401/403 = API ni vklopljen za ta ključ -> sloj izklopi za 10 min; sicer po 5 napakah za 60 s
+            dovoljenje = "HTTP 401" in str(e) or "HTTP 403" in str(e)
+            self.napake[sloj] = self.napake.get(sloj, 0) + 1
+            if dovoljenje or self.napake[sloj] >= 5:
+                trajanje = 600 if dovoljenje else 60
+                self.izklop_do[sloj], self.napake[sloj] = zdaj + trajanje, 0
+                dnevnik.error("sloj %s izločen za %d s: %s", sloj, trajanje, e)
             if k in self._predpomnilnik:
                 return self._predpomnilnik[k][1]
             raise NiNaVoljo(str(e)) from e
-        self.napake = 0
+        self.napake[sloj] = 0
         self._predpomnilnik[k] = (zdaj + ttl, r.content)
         if len(self._predpomnilnik) > self._najvec:
             self._predpomnilnik.popitem(last=False)

@@ -45,6 +45,24 @@ nalozi_env()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
+class _SkrijKljuce(logging.Filter):
+    """API ključi (key=… v URL) nikoli ne pridejo v dnevnik."""
+    import re as _re
+    _vzorec = _re.compile(r"(key=)[^&\s\"']+")
+
+    def filter(self, zapis: logging.LogRecord) -> bool:
+        zapis.msg = self._vzorec.sub(r"\1***", str(zapis.msg))
+        if zapis.args:
+            zapis.args = tuple(self._vzorec.sub(r"\1***", str(a)) if isinstance(a, str) or "key=" in str(a) else a
+                               for a in (zapis.args if isinstance(zapis.args, tuple) else (zapis.args,)))
+        return True
+
+
+for _ime in ("httpx", "httpcore", "usmerjanje", "karta", "geokodiranje", "poslusalec"):
+    logging.getLogger(_ime).addFilter(_SkrijKljuce())
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 # ---------- telesa zahtev ----------
 class ZacniKlic(BaseModel):
     stevilka: str | None = None
@@ -296,8 +314,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
 
     @app.get("/ploscice/stanje")
     async def ploscice_stanje():
-        na = ploscice.na_voljo()
-        return {"karta": na, "promet": na,
+        return {"karta": ploscice.na_voljo("karta"), "promet": ploscice.na_voljo("promet"),
                 "atribucija": os.environ.get("AID_KARTA_ATRIBUCIJA", "Podlaga karte in promet: zunanji vir")}
 
     @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")

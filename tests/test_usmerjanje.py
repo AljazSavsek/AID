@@ -152,3 +152,21 @@ def test_omejevalnik_razmakne_zahteve():
 
     casi = sorted(run(vse()))
     assert casi[-1] - casi[0] >= 0.35  # 5 zahtev pri 10/s
+
+
+def test_ni_poti_in_isti_kraj_ne_izklopita_ponudnika():
+    from usmerjanje.ponudniki import NiPoti
+
+    class Brez(Lazen):
+        async def izracunaj(self, od, do, tip):
+            self.klici += 1
+            raise NiPoti("NO_ROUTE_FOUND")
+
+    a = Brez("tomtom")
+    s = servis(a)
+    for i in range(5):
+        run(s.izracunaj((45.8 + i / 100, 15.1), DO))
+    assert s.varovalke["tomtom"].stanje == "zaprta"
+    # enota je že na cilju: brez klica ponudnika, čas 0
+    r = run(s.izracunaj(DO, DO))
+    assert r["cas_s"] == 0 and a.klici == 5
