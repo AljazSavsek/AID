@@ -78,6 +78,16 @@ class DogodekVhod(BaseModel):
     parametri: dict = {}
 
 
+class Odsek(BaseModel):
+    od: tuple[float, float]
+    do: tuple[float, float]
+    tip: str = Field(default="vozilo", pattern="^(vozilo|motorist|helikopter)$")
+
+
+class OdsekiVhod(BaseModel):
+    odseki: list[Odsek] = Field(max_length=80)
+
+
 class DemoKlic(BaseModel):
     hitrost: float = 1.0
 
@@ -229,6 +239,18 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     @app.get("/eta")
     async def eta(lat: float, lon: float, n: int = 3):
         return await C().eta_enot(lat, lon, n)
+
+    @app.get("/pot")
+    async def pot(enota_id: str, lat: float, lon: float):
+        return await C().pot_enote(enota_id, lat, lon)
+
+    @app.post("/poti")
+    async def poti(v: OdsekiVhod):
+        return await C().poti([o.model_dump() for o in v.odseki])
+
+    @app.post("/klic/{klic_id}/najblizja")
+    async def najblizja(klic_id: str, u: str = Depends(uporabnik)):
+        return await C().osvezi_najblizjo(klic_id, u)
 
     @app.get("/revizija")
     async def revizija(objekt_id: str | None = None, omejitev: int = 300):
