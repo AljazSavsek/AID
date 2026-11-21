@@ -117,3 +117,13 @@ kbd {
   .glava .desno .uporabnik span, .glava .desno .povezava { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; } }
+
+/* ---------- pogledi v glavi ---------- */
+.pogledi { display: flex; gap: 4px; margin-left: 12px; background: var(--podlaga); padding: 4px; border-radius: 10px; }
+.pogledi button { border: 0; background: transparent; color: var(--besedilo-2); padding: 7px 14px; border-radius: 7px; font-weight: 600; font-size: 14px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.pogledi button[aria-current="page"] { background: var(--antracit); color: #fff; }
+.pogledi button:hover:not([aria-current]) { background: var(--podlaga-2); color: var(--besedilo); }
+.uporabnik input { border: 1px solid transparent; background: transparent; font-weight: 600; color: var(--besedilo-2); border-radius: 6px; padding: 3px 6px; width: 9.5em; }
+.uporabnik input:hover, .uporabnik input:focus { border-color: var(--rob); background: #fff; }
+.pas-povezave { background: var(--rdeca); color: #fff; font-weight: 600; font-size: 14px; padding: 8px 20px; text-align: center; }
+@media (max-width: 900px) { .pogledi { margin-left: 0; order: 3; width: 100%; } .pogledi button { flex: 1; justify-content: center; } }
