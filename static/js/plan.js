@@ -146,6 +146,8 @@
     poti(P.aktiven, sloji.aktiven, { color: "#1D2228", weight: 3, opacity: 0.55 });
     if (P.prikazan) poti(P.prikazan, sloji.predlog, { color: "#8A1525", weight: 4, dashArray: "8 6" });
     if (manjkajo.length) naloziGeometrije(manjkajo);
+    (AID.ovire ? AID.ovire.ovire : []).forEach((o) => L.circle([o.lat, o.lon], { radius: o.polmer_m, color: "#8A1525", weight: 2, fillColor: "#8A1525", fillOpacity: 0.3 })
+      .bindTooltip(`⛔ ${esc(o.vrsta)}${o.opis ? " – " + esc(o.opis) : ""}`).addTo(sloji.enote));
     if (!izrisiKarto.prilagojeno) {
       const tocke = [...P.enote.filter((e) => e.tip !== "helikopter").map((e) => [e.lat, e.lon]),
         ...P.naloge.filter((n) => n.stanje === "odprta").map((n) => [n.prevzem.lat, n.prevzem.lon])];
@@ -326,6 +328,7 @@
   AID.na("plan_aktiven", (p) => { P.aktiven = p; if (P.predlog && (P.predlog.id === p.id || P.alternative.some((a) => a.id === p.id))) nastaviPredlog(null); else izrisiVse(); });
   AID.na("plan_zavrnjen", (p) => { if (P.predlog && P.predlog.id === p.id) nastaviPredlog(null); });
   AID.na("enote", (e) => { P.enote = e; izrisiVse(); });
+  (AID.naOvire = AID.naOvire || []).push(() => izrisiKarto());
   /* sporočila voznikov: stanja, potrditve, obvestila -> sveže enote/naloge */
   const osveziEnote = () => AID.api("/enote").then((e) => { P.enote = e; izrisiVse(); }).catch(() => {});
   AID.na("voznik_potrditev", osveziEnote);

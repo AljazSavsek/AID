@@ -136,11 +136,56 @@
     try { n = await api("/voznik/naloga"); } catch (e) { if (seja.get()) napaka(e); return; }
     if (V.planId && n.plan && n.plan.id !== V.planId) dodajObvestilo(`Nov plan v${n.plan.verzija} – naloge posodobljene`, "center");
     V.planId = n.plan && n.plan.id;
+    const prejsnjaPot = V.n && V.n.pot ? V.n.pot.izracunano : null;
+    const prejsnjaNaloga = V.n ? (V.n.koraki.find((k) => k.trenutni) || {}).naloga_id : null;
     V.n = n;
+    if (prejsnjaNaloga && !n.koraki.some((k) => k.naloga_id === prejsnjaNaloga)) {
+      // dispečer je nalogo prerazporedil (npr. vozilo je obtičalo) -> jasno obvestilo, ne le tiha sprememba
+      dodajObvestilo(`Nalogo ${prejsnjaNaloga} je prevzela druga enota (dispečer)`, "center");
+      pokaziOkno("Naloga predana drugi enoti", `Dispečer je nalogo ${prejsnjaNaloga} dodelil drugemu vozilu. Ostanite na voljo in sledite navodilom centra.`);
+    }
+    const simTeče = !!V.sim;
     if (V.sim) ustaviSimulacijo();
     izrisi();
+    pokaziSporocilaDispecerja();
+    // nova pot (npr. obvoz) med simulirano vožnjo -> vožnja se nadaljuje po novi poti
+    if (simTeče && n.pot && n.pot.izracunano !== prejsnjaPot) setTimeout(() => $("gumb-simulacija").click(), 300);
     if (n.koraki.some((k) => k.trenutni) && !n.pot) setTimeout(osvezi, 2500); // pot se še računa
   }
+  /* sporočila dispečerja: vidno okno (ne le vrstica), vibracija, »Prebrano« -> potrdilo dispečerju */
+  const prikazana = new Set();
+  function pokaziOkno(naslov, besedilo) {
+    if ($("okno-dispecer")) $("okno-dispecer").remove();
+    if (navigator.vibrate) navigator.vibrate([400, 150, 400]);
+    const o = document.createElement("div");
+    o.id = "okno-dispecer"; o.className = "okno-dispecer"; o.setAttribute("role", "alertdialog");
+    o.innerHTML = `<div class="okno-dispecer-telo"><div class="kv-oznaka">${esc(naslov)}</div><p>${esc(besedilo)}</p>
+      <button class="gumb rdec velik" data-zapri-okno>RAZUMEM</button></div>`;
+    document.body.appendChild(o);
+    o.querySelector("button").focus();
+  }
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-zapri-okno]")) { $("okno-dispecer")?.remove(); pokaziSporocilaDispecerja(); } });
+
+  function pokaziSporocilaDispecerja() {
+    const nova = (V.n.sporocila || []).filter((m) => m.smer === "od_dispecerja" && !m.prebrano && !prikazana.has(m.id));
+    if (!nova.length || $("okno-dispecer")) return;
+    const m = nova[0];
+    prikazana.add(m.id);
+    if (navigator.vibrate) navigator.vibrate([400, 150, 400]);
+    const o = document.createElement("div");
+    o.id = "okno-dispecer"; o.className = "okno-dispecer"; o.setAttribute("role", "alertdialog");
+    o.innerHTML = `<div class="okno-dispecer-telo"><div class="kv-oznaka">Sporočilo dispečerja · ${AID.uraKratko(new Date(m.cas * 1000))}</div>
+      <p>${esc(m.besedilo)}</p><button class="gumb rdec velik" data-prebrano-okno="${esc(m.id)}">PREBRANO</button></div>`;
+    document.body.appendChild(o);
+    o.querySelector("button").focus();
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-prebrano-okno]"); if (!b) return;
+    $("okno-dispecer")?.remove();
+    try { await api(`/voznik/sporocilo/${b.dataset.prebranoOkno}/prebrano`, { metoda: "POST" }); } catch (_) {}
+    await osvezi();
+  });
+
   function dodajObvestilo(besedilo, razred) {
     if (V.obvestila.some((o) => o.besedilo === besedilo)) return;
     V.obvestila.unshift({ besedilo, razred, cas: Date.now() / 1000 });
@@ -212,9 +257,15 @@
   function izrisiOpozorila() {
     const p = V.n.pot, nav = (p && p.navodila) || [];
     const ulica = (m) => { const pred = nav.filter((x) => x.odmik_m <= m && x.ulica).pop(); return pred ? pred.ulica : ""; };
-    const prejem = (V.n.obvestila || []).filter((o) => o.stanje === "caka").map((o) =>
-      `<li class="prejem">Nov plan od dispečerja – potrdite prejem<small style="color:#fff">${(o.razlike && o.razlike.dodani || []).length ? "dodane naloge: " + esc(o.razlike.dodani.map((x) => (Array.isArray(x) ? x[0] : x.naloga_id || x)).join(", ")) : "spremenjen vrstni red ali naloge"}</small>
-        <button data-potrdi="${esc(o.id)}">POTRDI PREJEM</button></li>`);
+    const id = (x) => (Array.isArray(x) ? x[0] : x.naloga_id || x);
+    const prejem = (V.n.obvestila || []).filter((o) => o.stanje === "caka").map((o) => {
+      const dod = (o.razlike && o.razlike.dodani) || [], odv = (o.razlike && o.razlike.odstranjeni) || [];
+      const opis = [dod.length ? "nove naloge: " + dod.map(id).join(", ") : "", odv.length ? "nalogo " + odv.map(id).join(", ") + " je prevzela druga enota" : ""]
+        .filter(Boolean).join(" · ") || "spremenjen vrstni red nalog";
+      return `<li class="prejem">${odv.length && !dod.length ? "Naloga predana drugi enoti" : "Nov plan od dispečerja"} – potrdite prejem<small style="color:#fff">${esc(opis)}</small>
+        <button data-potrdi="${esc(o.id)}">POTRDI PREJEM</button></li>`;
+    });
+    if (p && p.obvoz) prejem.push('<li class="center"><b>OBVOZ</b> – pot se izogne oviri (dispečer)<small>sledite novim navodilom</small></li>');
     if (prejem.length && navigator.vibrate) navigator.vibrate([200, 100, 200]);
     const prometna = ((p && p.opozorila) || []).map((o) => {
       const pred = Math.max(0, o.od_m - (V.sim ? V.sim.prevozeno : 0));
@@ -238,8 +289,17 @@
     catch (e2) { napaka(e2); }
   };
 
+  let mOvire = [];
+  function izrisiOvire() {
+    mOvire.forEach((m) => m.remove());
+    mOvire = (V.n.ovire || []).map((o) => {
+      const el = document.createElement("div"); el.className = "ovira-oznaka"; el.textContent = "⛔"; el.title = o.vrsta + (o.opis ? " – " + o.opis : "");
+      return new maplibregl.Marker({ element: el }).setLngLat([o.lon, o.lat]).addTo(karta);
+    });
+  }
   function izrisiPot() {
     if (!karta || !karta.getSource("pot")) return;
+    izrisiOvire();
     const n = V.n, e = n.enota, p = n.pot, k = trenutni();
     if (!V.sim) mVozilo.setLngLat([e.lon, e.lat]);
     const geo = p ? p.geometrija.map(([la, lo]) => [lo, la]) : [];

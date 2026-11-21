@@ -581,6 +581,8 @@
     $("odobri").textContent = "ODOBRI IN POŠLJI";
   };
 
+  document.addEventListener("input", (e) => { if (e.target.id === "navodilo-ekipi") S.navodilo = e.target.value.trim(); });
+
   /* Potrditev plana kar v pogledu klica: brez skritega drugega koraka (sicer voznik ne prejme ničesar). */
   async function potrdiPlanTukaj(plan, naloga) {
     const korak = Object.entries(plan.koraki_po_enoti).flatMap(([eid, ks]) => ks.map((k) => ({ ...k, eid }))).find((k) => k.naloga_id === naloga.id);
@@ -593,7 +595,9 @@
         <p>${e.voznik && e.voznik.prijavljen ? "Voznik je prijavljen v aplikaciji: nalogo, pot in navodila prejme takoj, ko potrdite plan."
           : '<b style="color:var(--rdeca)">Voznik nima prijavljene aplikacije – po potrditvi ga obvestite po radiu.</b>'}</p>
         ${druge.length ? `<p>Spremembe pri drugih vozilih (${druge.length}):</p><ul>${druge.slice(0, 5).map((x) => `<li>${esc(x.naloga_id)}: ${esc(x.prej || "—")} → ${esc(x.potem || x.opomba || "—")}</li>`).join("")}</ul>` : "<p>Drugi razporedi ostanejo enaki.</p>"}
-        <p class="pojasnilo">${esc(plan.primerjava.razlaga)}</p>`,
+        <p class="pojasnilo">${esc(plan.primerjava.razlaga)}</p>
+        <label class="navodilo-ekipi">Navodilo ekipi (neobvezno – voznik ga dobi na zaslon)
+          <textarea id="navodilo-ekipi" rows="2" maxlength="500" placeholder="npr. Vhod z dvorišča, sosed čaka na cesti.">${esc(S.navodilo || "")}</textarea></label>`,
       gumbi: [{ besedilo: "Pokaži v planu", vrednost: "plan" }, { besedilo: "POTRDI PLAN IN POŠLJI", vrednost: "potrdi", razred: "rdec" }],
     });
     if (ok === "plan") { AID.preklopi("plan"); return; }
@@ -601,6 +605,10 @@
     try {
       await AID.api(`/plan/${plan.id}/potrdi`, { metoda: "POST" });
       S.posiljanje = { ...(S.posiljanje || {}), enota: korak && korak.eid, stanje: "poslano" };
+      if (S.navodilo && korak) { // navodilo dispečerja -> zaslon voznika (sporočilo z »Prebrano«)
+        await AID.api(`/enote/${encodeURIComponent(korak.eid)}/sporocilo`, { metoda: "POST", telo: { koda: null, besedilo: S.navodilo } });
+        S.navodilo = "";
+      }
       izrisiNapredek();
       AID.obvestilo(`Poslano ${korak ? korak.eid : ""}`, e.voznik && e.voznik.prijavljen ? "Čakam potrditev prejema voznika." : "Obvestite voznika po radiu.");
     } catch (e2) { napaka(e2); }
@@ -705,6 +713,9 @@
   AID.na("klic", (k) => { if (S.klic && k.id === S.klic.id) { Object.assign(S.klic, k); izrisiTelefon(); } else AID.api("/cakajoci").then((c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); }).catch(() => {}); });
   AID.na("enote", (e) => { S.enote = e; izrisiVse(); });
   AID.na("ai_stanje", (v) => nastaviAi(v.na_voljo));
+  (AID.naPrerazporeditev = AID.naPrerazporeditev || []).push((nalogaId, enota) => {
+    if (S.posiljanje && S.posiljanje.naloga_id === nalogaId) { S.posiljanje.enota = enota; S.posiljanje.stanje = "poslano"; izrisiNapredek(); }
+  });
   AID.na("plan_aktiven", (p) => { if (S.posiljanje && S.posiljanje.plan_id === p.id && S.posiljanje.stanje === "predlog") { S.posiljanje.stanje = "poslano"; izrisiNapredek(); } });
   AID.na("voznik_potrditev", (x) => { if (S.posiljanje && x.enota_id === S.posiljanje.enota) { S.posiljanje.stanje = "prejeto"; izrisiNapredek(); } });
   AID.na("voznik_stanje", (x) => { if (S.posiljanje && x.naloga_id && x.naloga_id === S.posiljanje.naloga_id) { S.posiljanje.stanje = x.stanje; izrisiNapredek(); } });

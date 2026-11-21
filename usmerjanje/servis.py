@@ -90,8 +90,10 @@ class UsmerjevalniServis:
         self.zdravje_stanje: dict[str, dict] = {}
 
     # ---------- javni vmesnik ----------
-    async def izracunaj(self, od, do, tip_enote: str = "vozilo") -> dict:
-        return (await self._izracunaj(tuple(od), tuple(do), tip_enote)).javno()
+    async def izracunaj(self, od, do, tip_enote: str = "vozilo", izogibaj: list | None = None) -> dict:
+        """izogibaj: območja (jug, zahod, sever, vzhod), npr. ovire na cesti."""
+        iz = tuple(tuple(round(x, 5) for x in r) for r in (izogibaj or ()))
+        return (await self._izracunaj(tuple(od), tuple(do), tip_enote, iz)).javno()
 
     def iz_predpomnilnika(self, od, do, tip_enote: str = "vozilo") -> dict | None:
         """Samo že izračunani časi (brez klica ponudnika)."""
@@ -154,22 +156,22 @@ class UsmerjevalniServis:
             await asyncio.sleep(interval_s)
 
     # ---------- notranjost ----------
-    def _kljuc(self, od, do, tip):
+    def _kljuc(self, od, do, tip, iz=()):
         okno = int(self.ura() // self.okno_predpomnilnika_s)
-        return (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, okno)
+        return (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, iz, okno)
 
     def _iz_predpomnilnika_brez_okna(self, od, do, tip):
         """Ob popolnem izpadu je stara vrednost boljša od zračne ocene."""
-        osnova = (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip)
+        osnova = (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, ())
         kandidati = [(k[-1], v) for k, v in self._predpomnilnik.items() if k[:-1] == osnova]
         return max(kandidati, key=lambda x: x[0])[1] if kandidati else None
 
-    async def _izracunaj(self, od, do, tip) -> Pot:
+    async def _izracunaj(self, od, do, tip, iz=()) -> Pot:
         if tip == "helikopter":
             return helikopter(od, do)
         if zracna_razdalja_m(od, do) < 30:  # enota je že na cilju
             return Pot(0.0, 0.0, [list(od), list(do)], self._razpolozljivi()[0].kakovost if self._razpolozljivi() else "ocena")
-        kljuc = self._kljuc(od, do, tip)
+        kljuc = self._kljuc(od, do, tip, iz)
         if kljuc in self._predpomnilnik:
             return self._predpomnilnik[kljuc]
         if self._mesta is None:
@@ -177,9 +179,9 @@ class UsmerjevalniServis:
         async with self._mesta:
             if kljuc in self._predpomnilnik:  # medtem izračunal nekdo drug
                 return self._predpomnilnik[kljuc]
-            pot = await self._hedging(od, do, tip)
+            pot = await self._hedging(od, do, tip, iz)
         if pot is None:
-            star = self._iz_predpomnilnika_brez_okna(od, do, tip)
+            star = None if iz else self._iz_predpomnilnika_brez_okna(od, do, tip)
             if star is not None:
                 dnevnik.warning("vsi ponudniki nedosegljivi – uporabljen star predpomnilnik")
                 return Pot(star.cas_s, star.razdalja_m, star.geometrija, "ocena")
@@ -193,13 +195,15 @@ class UsmerjevalniServis:
             self._predpomnilnik.pop(next(iter(self._predpomnilnik)))
         return pot
 
-    def _razpolozljivi(self) -> list[Ponudnik]:
+    def _razpolozljivi(self, iz=()) -> list[Ponudnik]:
         zdaj = self.ura()
-        return [p for p in self.ponudniki if p.na_voljo() and self.varovalke[p.ime].dovoli(zdaj)]
+        return [p for p in self.ponudniki if p.na_voljo() and (not iz or p.podpira_izogibanje)
+                and self.varovalke[p.ime].dovoli(zdaj)]
 
-    async def _klic(self, p: Ponudnik, od, do, tip) -> Pot:
+    async def _klic(self, p: Ponudnik, od, do, tip, iz=()) -> Pot:
         try:
-            pot = await p.izracunaj(od, do, tip)
+            pot = await (p.izracunaj(od, do, tip, izogibaj=list(iz)) if iz else p.izracunaj(od, do, tip))
+            pot.izogiba = bool(iz)
             if not (pot.cas_s >= 0 and pot.razdalja_m >= 0):
                 raise ValueError("neveljaven odgovor")
             self.varovalke[p.ime].uspeh(self.ura())
@@ -216,8 +220,8 @@ class UsmerjevalniServis:
                 dnevnik.warning("ponudnik %s napaka: %s", p.ime, e)
             raise
 
-    async def _hedging(self, od, do, tip) -> Pot | None:
-        vrsta = self._razpolozljivi()
+    async def _hedging(self, od, do, tip, iz=()) -> Pot | None:
+        vrsta = self._razpolozljivi(iz)
         if not vrsta:
             return None
         konec = asyncio.get_running_loop().time() + self.rok_s
@@ -227,7 +231,7 @@ class UsmerjevalniServis:
         def zazeni_naslednjega():
             if vrsta:
                 p = vrsta.pop(0)
-                tekoci[asyncio.ensure_future(self._klic(p, od, do, tip))] = p
+                tekoci[asyncio.ensure_future(self._klic(p, od, do, tip, iz))] = p
                 if len(tekoci) > 1 or p is not self.ponudniki[0]:
                     dnevnik.info("hedging: vzporedno kličem %s", p.ime)
 

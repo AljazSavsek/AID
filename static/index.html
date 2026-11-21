@@ -32,6 +32,7 @@
   </div>
 </header>
 <div class="pas-povezave skrito" id="pas-povezave" role="status"></div>
+<div class="pas-ovire skrito" id="pas-ovire" role="alert" aria-live="assertive"></div>
 <div class="prijava-disp skrito" id="prijava-disp">
   <form class="prijava-disp-okno" id="obrazec-prijave-disp" autocomplete="on">
     <img src="img/aid-logo.svg" alt="AID" height="40">
@@ -77,6 +78,9 @@
         <label>Hitrost demo klica
           <select id="hitrost"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></label>
         <label><input type="checkbox" id="izpad-ai"> Simuliraj izpad AI poslušalca</label>
+        <div class="demo-ovire">Ovira na poti poslanega vozila:
+          <button class="gumb majhen" type="button" data-demo-ovira="zapora">1. Zapora ceste</button>
+          <button class="gumb majhen" type="button" data-demo-ovira="obtical">2. Vozilo obtiči</button></div>
       </details>
     </div>
   </section>
@@ -204,6 +208,7 @@
 <script src="js/povezava.js"></script>
 <script src="js/klic.js"></script>
 <script src="js/plan.js"></script>
+<script src="js/ovire.js"></script>
 <script src="js/ekipe.js"></script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>

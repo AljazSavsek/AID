@@ -232,3 +232,6 @@
 .voznik-da { font-size: 11px; font-weight: 700; color: var(--antracit); }
 .voznik-ne { font-size: 11px; font-weight: 700; color: var(--rdeca); }
 .izbira-vozila td.eta, .izbira-vozila td:nth-child(3) { white-space: nowrap; }
+
+.navodilo-ekipi { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--besedilo-2); margin-top: 8px; }
+.navodilo-ekipi textarea { border: 1px solid var(--rob); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--besedilo); }

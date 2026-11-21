@@ -17,6 +17,8 @@ import logging
 import secrets
 import time
 
+from usmerjanje.ponudniki import zracna_razdalja_m
+
 dnevnik = logging.getLogger("voznik")
 
 TABELE = """
@@ -387,14 +389,17 @@ class NalogeVoznikov:
         e = next((x for x in self.c.enote() if x["id"] == enota_id), None)
         if not k or not e:
             return None
-        r = await self.c.usmerjanje.izracunaj((e["lat"], e["lon"]), (k["lat"], k["lon"]), e["tip"])
+        # aktivne ovire: pot se jim izogne (api/ovire.py); helikopter leti po zraku
+        rects, ovire = (self.c.ovire.izogibanja((e["lat"], e["lon"]), (k["lat"], k["lon"]))
+                        if getattr(self.c, "ovire", None) and e["tip"] != "helikopter" else ([], []))
+        r = await self.c.usmerjanje.izracunaj((e["lat"], e["lon"]), (k["lat"], k["lon"]), e["tip"], izogibaj=rects or None)
         plan = self.c.plan_aktiven()
         p = {"plan_id": plan["id"] if plan else None, "naloga_id": k["naloga_id"], "akcija": k["akcija"],
              "od": {"lat": e["lat"], "lon": e["lon"]}, "do": {"lat": k["lat"], "lon": k["lon"]},
              "cas_s": r["cas_s"], "razdalja_m": r["razdalja_m"], "geometrija": r["geometrija"], "kakovost": r["kakovost"],
              "cestna": e["tip"] != "helikopter", "izracunano": self.ura(),
              "navodila": r.get("navodila", []), "opozorila": r.get("opozorila", []),
-             "zamuda_prometa_s": r.get("zamuda_prometa_s", 0)}
+             "zamuda_prometa_s": r.get("zamuda_prometa_s", 0), "ovire": ovire, "obvoz": bool(ovire)}
         if self.trenutni(enota_id) != k:
             return None  # med računanjem se je korak spremenil
         self.db.izvedi("INSERT INTO voznik_pot VALUES (?,?) ON CONFLICT(enota_id) DO UPDATE SET podatki=excluded.podatki",
@@ -426,7 +431,10 @@ class NalogeVoznikov:
                 "predlogi": self.ekipa.predlogi_enote(enota_id) if self.ekipa else [],
                 "sporocila": self.ekipa.za_voznika(enota_id) if self.ekipa else [],
                 "pot": self.pot(enota_id),
-                "obvestila": self.obvestila(enota_id), "zagon": self.objava.zagon, "seq": self.objava.seq}
+                "obvestila": self.obvestila(enota_id), "zagon": self.objava.zagon, "seq": self.objava.seq,
+                "ovire": [{k2: o[k2] for k2 in ("id", "vrsta", "opis", "lat", "lon", "polmer_m")} for o in self.c.ovire.aktivne()
+                          if e and zracna_razdalja_m((e["lat"], e["lon"]), (o["lat"], o["lon"])) < 15000]
+                if e and getattr(self.c, "ovire", None) else []}
 
     def opis_za_dispecerja(self, enota_id: str) -> dict:
         k = self.trenutni(enota_id)
