@@ -34,6 +34,15 @@ Testi:
 python -m pytest -q tests
 ```
 
+## Ključi API (neobvezni)
+
+Ključe vpišite v lokalno datoteko `.env` (predloga: `.env.example`). Strežnik jo prebere ob zagonu;
+datoteka je v `.gitignore` in nikoli ne gre na GitHub.
+
+```bash
+cp .env.example .env
+```
+
 ## Okoljske spremenljivke (vse neobvezne)
 
 | Spremenljivka | Namen |

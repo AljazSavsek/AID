@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+os.environ["AID_BREZ_ENV"] = "1"            # testi ne berejo lokalne .env
 os.environ["AID_NOMINATIM"] = "0"          # testi ne smejo klicati interneta
 os.environ.pop("ANTHROPIC_API_KEY", None)
 os.environ.pop("OLLAMA_URL", None)
