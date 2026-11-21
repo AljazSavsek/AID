@@ -26,6 +26,21 @@ from zajem.simulator import nalozi_klic, predvajaj
 from .storitev import Center, NapakaStoritve
 
 KOREN = Path(__file__).resolve().parent.parent
+
+
+def nalozi_env(pot: Path = KOREN / ".env") -> None:
+    """Ključi iz lokalne datoteke .env (ni v gitu). Okoljske spremenljivke imajo prednost."""
+    if not pot.exists() or os.environ.get("AID_BREZ_ENV") == "1":
+        return
+    for vrstica in pot.read_text(encoding="utf-8").splitlines():
+        vrstica = vrstica.strip()
+        if not vrstica or vrstica.startswith("#") or "=" not in vrstica:
+            continue
+        kljuc, vrednost = vrstica.split("=", 1)
+        os.environ.setdefault(kljuc.strip(), vrednost.strip().strip('"').strip("'"))
+
+
+nalozi_env()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
