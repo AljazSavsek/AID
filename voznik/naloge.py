@@ -413,7 +413,7 @@ class NalogeVoznikov:
                 "koraki": koraki, "faza": self.faza(enota_id, k) if k else None,
                 "dovoljena_stanja": self.dovoljena(enota_id), "mogoci_predlogi": self.mogoci_predlogi(enota_id),
                 "predlogi": self.ekipa.predlogi_enote(enota_id) if self.ekipa else [],
-                "sporocila": self.ekipa.sporocila(enota_id, 10) if self.ekipa else [],
+                "sporocila": self.ekipa.za_voznika(enota_id) if self.ekipa else [],
                 "pot": self.pot(enota_id),
                 "obvestila": self.obvestila(enota_id), "zagon": self.objava.zagon, "seq": self.objava.seq}
 

@@ -198,3 +198,18 @@ def test_eskalacija_po_roku(cl):
     assert [e for e in nv.preveri_eskalacije(o["rok"] + 50) if e["enota_id"] == eid] == []  # samo enkrat
     e = next(x for x in cl.get("/enote").json() if x["id"] == eid)
     assert e["voznik"]["obvestilo"]["razlog_eskalacije"] == "ni_potrditve"
+
+
+def test_sporocilo_dispecerja_hitro_in_besedilo_ter_zgodovina(cl):
+    """Hitro sporočilo + besedilo: oboje pride do voznika. Lastna hitra sporočila ne izrinejo dispečerjevih."""
+    H = prijava(cl, "RV-2")
+    m = cl.post("/enote/RV-2/sporocilo", headers=D, json={"koda": "pocakaj", "besedilo": "Policija je na poti"}).json()
+    assert m["besedilo"] == "Počakajte na prizorišču – Policija je na poti"
+    assert cl.post("/enote/RV-2/sporocilo", headers=D, json={"besedilo": "Zastoj na Celovški"}).json()["besedilo"] == "Zastoj na Celovški"
+    assert cl.post("/enote/RV-2/sporocilo", headers=D, json={}).status_code == 422
+    for _ in range(12):
+        cl.post("/voznik/sporocilo", headers=H, json={"koda": "zamuda"})
+    disp = [x["besedilo"] for x in naloga(cl, H)["sporocila"] if x["smer"] == "od_dispecerja"]
+    assert disp == ["Zastoj na Celovški", "Počakajte na prizorišču – Policija je na poti"]
+    # voznik še vedno pošlje hitro ALI besedilo (en dotik = eno sporočilo)
+    assert cl.post("/voznik/sporocilo", headers=H, json={"koda": "zamuda", "besedilo": "x"}).status_code == 422

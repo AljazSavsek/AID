@@ -96,7 +96,8 @@
       const koda = $("sp-hitro").value, besedilo = $("sp-besedilo").value.trim();
       if (!koda && !besedilo) return;
       try {
-        await AID.api(`/enote/${encodeURIComponent($("sp-enota").value)}/sporocilo`, { metoda: "POST", telo: koda ? { koda } : { besedilo } });
+        // izbrana vrsta IN besedilo -> pošlje se oboje (besedilo se nikoli ne izgubi)
+        await AID.api(`/enote/${encodeURIComponent($("sp-enota").value)}/sporocilo`, { metoda: "POST", telo: { koda: koda || null, besedilo: besedilo || null } });
         $("sp-besedilo").value = ""; $("sp-hitro").value = "";
       } catch (e) { napaka(e); }
       nalozi();
