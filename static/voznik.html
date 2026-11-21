@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#1D2228">
   <title>AID · Reševalno vozilo</title>
   <link rel="icon" href="img/aid-logo.svg">
+  <link rel="manifest" href="manifest-voznik.webmanifest">
+  <link rel="apple-touch-icon" href="img/ikona-voznik-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
@@ -15,11 +17,11 @@
 <body class="voznik">
 <header class="glava temna">
   <img class="logo" src="img/aid-logo-svetel.svg" alt="AID">
-  <label class="izbira-enote">Vozilo
-    <select id="enota" aria-label="Vozilo"></select>
-  </label>
+  <span class="izbira-enote">Vozilo <b id="enota-ime">—</b></span>
   <span class="znacka" id="status-enote">—</span>
   <div class="desno">
+    <button class="gumb majhen temen-obroba" id="gumb-gps" title="Pošiljaj položaj iz GPS naprave">GPS naprave</button>
+    <button class="gumb majhen temen-obroba" id="gumb-odjava">Odjava</button>
     <span class="povezava" id="povezava">Povezovanje …</span>
     <span class="ura" data-ura>--:--:--</span>
   </div>
@@ -69,6 +71,18 @@
   </section>
 </main>
 
+<div class="prijava-ozadje skrito" id="prijava">
+  <form class="prijava-v" id="obrazec-prijave" autocomplete="off">
+    <img src="img/aid-logo-svetel.svg" alt="AID" height="40">
+    <h2>Prijava vozila</h2>
+    <label>Vozilo<select id="prijava-enota" required></select></label>
+    <label>Koda enote<input id="prijava-koda" required autocomplete="one-time-code" placeholder="npr. DEMO-RV2"></label>
+    <p class="napaka-prijave" id="napaka-prijave" role="alert"></p>
+    <button class="gumb rdec velik" type="submit">PRIJAVA</button>
+    <p class="pojasnilo-v">Kodo izda skrbnik. Demo kode: DEMO-RV1 … DEMO-RV4, DEMO-MOT1, DEMO-MOT2, DEMO-HELI.</p>
+  </form>
+</div>
+
 <dialog id="dlg-sporocilo" class="dlg-v">
   <form method="dialog">
     <h3>Sporočilo regijskemu centru</h3>
@@ -85,7 +99,7 @@
 
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="js/skupno.js"></script>
-<script src="js/povezava.js"></script>
 <script src="js/voznik.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

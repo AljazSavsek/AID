@@ -12,7 +12,12 @@
   AID.uporabnik = () => (document.getElementById("ime-uporabnika")?.value || AID.imeUporabnika || "dispečer").trim();
 
   AID.na = function (tip, fn) { (poslusalci[tip] = poslusalci[tip] || []).push(fn); };
+  /* ura strežnika (starost položajev se računa v času strežnika, ne brskalnika) */
+  let odmikUre = 0;
+  AID.streznikZdaj = () => Date.now() / 1000 + odmikUre;
+  AID.stanjePovezave = "ok";
   function razposlji(s) {
+    if (s.cas) odmikUre = s.cas - Date.now() / 1000;
     if (s.seq && s.seq <= seq) return;
     if (s.seq) seq = s.seq;
     (poslusalci[s.tip] || []).forEach((f) => { try { f(s.podatki, s); } catch (e) { console.error(e); } });
@@ -20,6 +25,7 @@
   }
 
   function nastaviStanje(stanje, besedilo) {
+    AID.stanjePovezave = stanje;
     const el = document.getElementById("povezava");
     const pas = document.getElementById("pas-povezave");
     const st = document.getElementById("st-streznik");
@@ -72,6 +78,7 @@
       try {
         const r = await AID.api("/stanje?od=" + seq);
         r.dogodki.forEach(razposlji);
+        if (r.polozaji) razposlji({ tip: "polozaji", cas: r.cas, podatki: r.polozaji });  // enota_premik je samo WS
         if (!wsOdprt) nastaviStanje("rezerva", "Povezava (rezerva)");
         razposlji({ tip: "ai_stanje", podatki: { na_voljo: r.ai_na_voljo } });
       } catch (_) { nastaviStanje("brez", "Brez povezave"); }

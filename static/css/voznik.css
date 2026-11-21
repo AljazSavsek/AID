@@ -92,3 +92,15 @@ body.voznik { background: #0E1114; color: #fff; overflow: hidden; }
 }
 .kakovost-v:empty { display: none; }
 .izbira-enote select { min-width: 190px; }
+
+.izbira-enote b { color: #fff; font-size: 15px; }
+.gumb.temen-obroba { background: transparent; color: #D6DBE1; border-color: #3A414B; }
+.gumb.temen-obroba.vklopljen { background: #fff; color: var(--antracit); }
+.prijava-ozadje { position: fixed; inset: 0; z-index: 50; background: radial-gradient(circle at 30% 20%, #2A3038, #0E1114 70%); display: grid; place-items: center; padding: 16px; }
+.prijava-v { width: min(380px, 100%); background: var(--antracit); border: 1px solid #2E353E; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.prijava-v h2 { margin: 4px 0 0; font-size: 20px; }
+.prijava-v label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: #9AA3AE; }
+.prijava-v select, .prijava-v input { background: #14181C; color: #fff; border: 1px solid #3A414B; border-radius: 8px; padding: 12px; font-size: 16px; }
+.napaka-prijave { color: var(--rdeca-svetla); font-weight: 600; margin: 0; min-height: 1em; font-size: 14px; }
+.kv.opozorila li.prejem { background: var(--rdeca); border-left-color: #fff; }
+.kv.opozorila li.prejem button { margin-top: 6px; width: 100%; background: #fff; color: var(--rdeca); border: 0; border-radius: 6px; padding: 10px; font-weight: 800; font-size: 15px; }

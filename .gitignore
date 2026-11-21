@@ -4,3 +4,5 @@ __pycache__/
 podatki/
 *.log
 .env
+aplikacija_voznik/build/
+.aid_voznik/
