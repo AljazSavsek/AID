@@ -57,6 +57,19 @@
     if (AID.stanjePovezave === "brez") lokalno = "neznano";
     return { signal: lokalno, starost };
   }
+  /* voznik: prijava, faza trenutnega koraka, potrditev prejema plana */
+  const FAZA = { prejeto: "prejeto", na_poti: "na poti", na_prizoriscu: "na prizorišču" };
+  function opisVoznika(e) {
+    const v = e.voznik;
+    if (!v) return "";
+    const deli = [v.prijavljen ? "voznik prijavljen" : "voznik ni prijavljen"];
+    if (v.korak) deli.push(`${v.korak.naloga_id} ${v.korak.akcija}: ${FAZA[v.faza] || "dodeljeno"}`);
+    if (v.obvestilo && v.obvestilo.stanje === "caka") {
+      const ostane = Math.round(v.obvestilo.rok - AID.streznikZdaj());
+      deli.push(ostane > 0 ? `čaka potrditev (${ostane} s)` : `NI POTRDIL (${-ostane} s čez rok)`);
+    } else if (v.obvestilo && v.obvestilo.stanje === "potrjeno") deli.push("plan potrjen");
+    return deli.join(" · ");
+  }
   const opisSignala = (e) => { const s = signalEnote(e); return SIGNAL[s.signal] + (s.starost != null ? " · " + starostBesedilo(s.starost) : ""); };
 
   const ikonaEnote = (e) => {
@@ -110,7 +123,8 @@
       const sig = signalEnote(e);
       return `<li data-enota="${esc(e.id)}"><span class="ime">${esc(e.id)}</span>${zamik || `<span class="st-enote ${e.stanje}">${STANJE[e.stanje] || e.stanje}</span>`}
         <span class="tip">${TIP[e.tip] || e.tip}${e.tovor && e.tovor.length ? " · tovor: " + e.tovor.map((t) => esc(t.naloga_id)).join(", ") : ""}</span>
-        <span class="st-signal ${sig.signal}" data-signal-enote="${esc(e.id)}">${esc(opisSignala(e))}</span></li>`;
+        <span class="st-signal ${sig.signal}" data-signal-enote="${esc(e.id)}">${esc(opisSignala(e))}</span>
+        <span class="tip st-voznik">${esc(opisVoznika(e))}</span></li>`;
     }).join("");
   }
   $("seznam-enot").onclick = (e) => {
@@ -274,6 +288,13 @@
   AID.na("plan_aktiven", (p) => { P.aktiven = p; if (P.predlog && (P.predlog.id === p.id || P.alternative.some((a) => a.id === p.id))) nastaviPredlog(null); else izrisiVse(); });
   AID.na("plan_zavrnjen", (p) => { if (P.predlog && P.predlog.id === p.id) nastaviPredlog(null); });
   AID.na("enote", (e) => { P.enote = e; izrisiVse(); });
+  /* sporočila voznikov: stanja, potrditve, obvestila -> sveže enote/naloge */
+  const osveziEnote = () => AID.api("/enote").then((e) => { P.enote = e; izrisiVse(); }).catch(() => {});
+  AID.na("voznik_potrditev", osveziEnote);
+  AID.na("voznik_obvestilo", osveziEnote);
+  AID.na("voznik_prijava", osveziEnote);
+  AID.na("naloge", (n) => { P.naloge = n; izrisiVse(); });
+  AID.na("centri", (c) => { P.centri = c; izrisiVse(); });
 
   /* premik enote: marker se premakne brez ponovnega izrisa celotne karte */
   function premakni(m) {
@@ -294,7 +315,11 @@
   function osveziSignale() {
     P.enote.forEach((e) => {
       const el = document.querySelector(`[data-signal-enote="${CSS.escape(e.id)}"]`);
-      if (el) { el.textContent = opisSignala(e); el.className = "st-signal " + signalEnote(e).signal; }
+      if (el) {
+        el.textContent = opisSignala(e); el.className = "st-signal " + signalEnote(e).signal;
+        const v = el.parentElement && el.parentElement.querySelector(".st-voznik");
+        if (v) v.textContent = opisVoznika(e);
+      }
       const mk = markerji[e.id];
       const s = signalEnote(e).signal;
       if (mk && mk._signal !== s) { mk._signal = s; mk.setIcon(ikonaEnote(e)); }

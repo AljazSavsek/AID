@@ -42,6 +42,8 @@ class NastavitveVoznika:
     odmik_ure_s: float = 5.0            # večji odmik ure naprave -> popravek
     prihodnost_s: float = 60.0
     dovoli_lazno: bool = False          # »mocked« položaji ne postanejo trenutni
+    # potrditev prejema plana
+    rok_potrditve_s: float = 30.0
     # hramba in omejitve
     hranjenje_dni: float = 30.0
     omejitev_polozaj_min: int = 60      # zahtevkov na enoto na minuto
@@ -64,6 +66,7 @@ class NastavitveVoznika:
             aktivno_zakasnjeno_s=_f("AID_SIGNAL_ZAKASNJENO_S", 30),
             aktivno_brez_s=_f("AID_SIGNAL_BREZ_S", 60),
             hranjenje_dni=_f("AID_POLOZAJ_HRANJENJE_DNI", 30),
+            rok_potrditve_s=_f("AID_VOZNIK_ROK_POTRDITVE_S", 30),
             dovoli_lazno=os.environ.get("AID_GPS_DOVOLI_LAZNO") == "1",
         )
 

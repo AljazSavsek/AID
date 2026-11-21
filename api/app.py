@@ -24,6 +24,7 @@ from dnevnik.shramba import Shramba
 from karta.ploscice import NiNaVoljo, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
 from voznik.avtentikacija import NapakaPrijave
+from voznik.naloge import NapakaStanja
 from voznik.vmesnik import ustvari_usmerjevalnik
 from zajem.simulator import nalozi_klic, predvajaj
 
@@ -156,6 +157,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     async def napaka_prijave(_: Request, e: NapakaPrijave):
         return JSONResponse({"napaka": str(e)}, status_code=e.koda,
                             headers={"WWW-Authenticate": "Bearer"} if e.koda == 401 else None)
+
+    @app.exception_handler(NapakaStanja)
+    async def napaka_stanja(_: Request, e: NapakaStanja):
+        return JSONResponse({"napaka": str(e)}, status_code=e.koda)
 
     app.include_router(ustvari_usmerjevalnik(C, preveri_skrbnika))
 

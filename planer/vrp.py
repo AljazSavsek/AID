@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+from dnevnik.model import NERAZPOLOZLJIVA
+
 UTEZ_ZAMUDE = {1: 100, 2: 40, 3: 15, 4: 5, 5: 2}            # na sekundo zamude
 KAZEN_IZPUSTA = {1: 50_000_000, 2: 20_000_000, 3: 5_000_000, 4: 1_000_000, 5: 300_000}
 # fiksni strošek uporabe enote (helikopter je drag in redek vir)
@@ -64,7 +66,7 @@ def _tip_vozila(e: dict) -> str:
 def sestavi_model(stanje: dict, zdaj: float) -> Model:
     """Iz stanja zgradi vozlišča. Opravljeno je zaklenjeno (izpuščeno),
     tovor v vozilu mora dostaviti isto vozilo, enote začnejo na trenutni lokaciji."""
-    enote = [e for e in stanje["enote"] if e["stanje"] != "okvara"]
+    enote = [e for e in stanje["enote"] if e["stanje"] not in NERAZPOLOZLJIVA]
     m = Model(enote=enote)
 
     def dodaj(**kw) -> int:
