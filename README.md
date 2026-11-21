@@ -98,3 +98,25 @@ Dispečer vidi žive položaje, starost in stanje »ni signala« v pogledu **Pla
 | `AID_GPS_AKTIVNO_FIKS_S`, `AID_GPS_AKTIVNO_POSILJANJE_S`, `AID_GPS_PROSTO_FIKS_S`, `AID_GPS_PROSTO_POSILJANJE_S`, `AID_GPS_BATERIJA_POSILJANJE_S` | frekvence GPS |
 | `AID_SIGNAL_ZAKASNJENO_S`, `AID_SIGNAL_BREZ_S` | pragova signala na nalogi (30 s, 60 s) |
 | `AID_POLOZAJ_HRANJENJE_DNI`, `AID_GPS_DOVOLI_LAZNO` | hramba zgodovine (30), sprejem lažnih položajev |
+
+### Aplikacija voznika (`aplikacija_voznik/`, Flet)
+
+Razvoj na računalniku (simuliran GPS vozi po potrjeni poti):
+
+```bash
+pip install -r aplikacija_voznik/requirements-razvoj.txt
+```
+
+```bash
+cd aplikacija_voznik && AID_STREZNIK=http://localhost:8000 AID_VOZNIK_SIMULACIJA=1 python main.py --splet
+```
+
+Prijava: enota `RV-1`, koda `DEMO-RV1`. Telefon (Android): `flet build apk`, nato preizkus po
+[aplikacija_voznik/PREIZKUS_NAPRAVE.md](aplikacija_voznik/PREIZKUS_NAPRAVE.md).
+
+| Endpoint | Namen |
+|---|---|
+| `GET /voznik/naloga` | koraki aktivnega plana, potrjeni podatki, pot trenutnega koraka, dovoljena stanja, odprta obvestila |
+| `POST /voznik/stanje` | prejeto, na_poti, na_prizoriscu, pacient_nalozen, dostavljeno, opravljeno, prosto, ni_na_voljo |
+| `POST /voznik/potrdi` | potrditev prejema plana |
+| `WS /ws/voznik`, `GET /voznik/dogodki` | spremembe za napravo (prvo sporočilo: `{"zeton": …}`) |

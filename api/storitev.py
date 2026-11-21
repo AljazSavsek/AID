@@ -27,6 +27,7 @@ from poslusalec.poslusalec import Poslusalec
 from usmerjanje.ponudniki import helikopter, zracna_ocena
 from usmerjanje.servis import UsmerjevalniServis
 from voznik.avtentikacija import Avtentikacija
+from voznik.naloge import NalogeVoznikov
 from voznik.nastavitve import NastavitveVoznika
 from voznik.polozaji import Polozaji
 
@@ -91,6 +92,8 @@ class Center:
         self.nast_voznika = nastavitve_voznika or NastavitveVoznika.iz_okolja()
         self.avtentikacija = Avtentikacija(self.db, self.nast_voznika)
         self.polozaji = Polozaji(self.db, self.nast_voznika)
+        self.po_potrditvi_plana: list = []
+        self.naloge_voznikov = NalogeVoznikov(self, self.nast_voznika.rok_potrditve_s)
         self.nalozi_scenarij(scenarij or KOREN / "demo" / "scenarij.json")
 
     # ================= scenarij in stanje =================
@@ -115,7 +118,10 @@ class Center:
 
     def enote(self) -> list[dict]:
         """Enote z živim GPS položajem (če obstaja) in stanjem signala."""
-        return self.polozaji.prekrij(self.db.vsi("enota"))
+        enote = self.polozaji.prekrij(self.db.vsi("enota"))
+        for e in enote:
+            e["voznik"] = self.naloge_voznikov.opis_za_dispecerja(e["id"])
+        return enote
 
     def stanje(self) -> dict:
         return {"enote": self.enote(), "naloge": self.db.vsi("naloga"), "centri": self.db.vsi("center")}
@@ -124,7 +130,7 @@ class Center:
         for tip, kljuc in (("enota", "enote"), ("naloga", "naloge"), ("center", "centri")):
             for o in st[kljuc]:
                 if tip == "enota":
-                    o = {k: v for k, v in o.items() if k != "polozaj"}  # živi položaj je v svoji tabeli
+                    o = {k: v for k, v in o.items() if k not in ("polozaj", "voznik")}  # prehodna polja (svoje tabele)
                 self.db.shrani(tip, o)
 
     def _v_ozadju(self, koro) -> asyncio.Task:
@@ -315,7 +321,7 @@ class Center:
     # ---------- usmerjanje + planer -> predlog enote ----------
     async def eta_enot(self, lat: float, lon: float, omejitev: int = 3) -> list[dict]:
         """Časi prihoda prostih enot (samo čas, razdalja, kakovost – brez ponudnika)."""
-        enote = [e for e in self.enote() if e["stanje"] != "okvara"]
+        enote = [e for e in self.enote() if e["stanje"] not in M.NERAZPOLOZLJIVA]
 
         async def ena(e):
             pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"])
@@ -535,10 +541,10 @@ class Center:
                 # dispečer je izbral enoto -> uporabi jo kot "prejšnjo dodelitev" (kazen za spremembo)
                 prejsnji = copy.deepcopy(prejsnji)
                 prejsnji["koraki_po_enoti"].setdefault(zelena_enota[1], []).insert(0, {"naloga_id": zelena_enota[0], "akcija": "prevzem"})
-            n_zacetkov = len([e for e in st["enote"] if e["stanje"] != "okvara"])
+            n_zacetkov = len([e for e in st["enote"] if e["stanje"] not in M.NERAZPOLOZLJIVA])
             opombe = preusmeri_po_zmogljivosti(st)  # najprej, da se vozlišča ujemajo z matriko
             tocke = [(v.lat, v.lon) for v in sestavi_model(copy.deepcopy(st), time.time()).vozlisca]
-            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] != "okvara"}), n_zacetkov)
+            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] not in M.NERAZPOLOZLJIVA}), n_zacetkov)
             loop = asyncio.get_running_loop()
             t0 = time.perf_counter()
             planovi = await loop.run_in_executor(None, lambda: planiraj(st, lambda *_: (casi, razdalje), prejsnji, self.nast))
@@ -549,10 +555,16 @@ class Center:
                 self.objava.objavi("opozorilo", {"vrsta": "plan", "sporocilo": "Plana ni bilo mogoče izračunati."})
                 return None
             stari = [f"{e['id']}: položaj star {round(e['polozaj']['starost_s'] / 60)} min." for e in st["enote"]
-                     if e["stanje"] != "okvara" and (e.get("polozaj") or {}).get("signal") == "ni_signala"]
+                     if e["stanje"] not in M.NERAZPOLOZLJIVA and (e.get("polozaj") or {}).get("signal") == "ni_signala"]
             for p in planovi:
                 p["opombe"] = p["opombe"] + stari
-            self._shrani_stanje(st)  # morebitne preusmeritve centrov
+            # morebitne preusmeritve centrov: shrani SAMO spremenjeno dostavo. Celoten posnetek bi
+            # povozil stanja, ki jih je voznik sporočil med računanjem (tovor, opravljene naloge).
+            for n in st["naloge"]:
+                svez = self.db.beri("naloga", n["id"])
+                if svez and svez.get("dostava") != n.get("dostava") and svez.get("stanje") == "odprta":
+                    svez["dostava"] = n["dostava"]
+                    self.db.shrani("naloga", svez)
             for p in self.db.vsi("plan", stanje="predlog"):
                 p["stanje"] = "zamenjan"
                 self.db.shrani("plan", p)
@@ -595,13 +607,18 @@ class Center:
         self.db.shrani("plan", p)
         # stanje enot po potrjenem planu
         for e in self.db.vsi("enota"):
-            if e["stanje"] == "okvara":
+            if e["stanje"] in M.NERAZPOLOZLJIVA:
                 continue
             e["stanje"] = "na_nalogi" if p["koraki_po_enoti"].get(e["id"]) else "prosto"
             self.db.shrani("enota", e)
         self.db.revizija(uporabnik, "Plan", plan_id, "potrdi_plan", star["id"] if star else None, plan_id)
         self.objava.objavi("plan_aktiven", p)
         self.objava.objavi("enote", self.enote())
+        for f in self.po_potrditvi_plana:  # npr. obvestila voznikom (voznik/naloge.py)
+            try:
+                f(star, p)
+            except Exception:  # noqa: BLE001
+                dnevnik.exception("po potrditvi plana")
         return p
 
     def zavrni_plan(self, plan_id: str, uporabnik: str, razlog: str | None = None) -> dict:

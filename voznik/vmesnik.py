@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from typing import Callable
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+import asyncio
+import contextlib
+import time
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from .avtentikacija import NapakaPrijave
@@ -37,6 +41,16 @@ class Fiks(BaseModel):
     smer: float | None = Field(default=None, ge=0, le=360)           # stopinje
     natancnost: float | None = Field(default=None, ge=0, le=100000)  # m
     lazno: bool = False
+
+
+class StanjeVhod(BaseModel):
+    stanje: str = Field(pattern=r"^[a-z_]{3,30}$")
+    naloga_id: str | None = Field(default=None, pattern=ID_VZOREC)
+    akcija: str | None = Field(default=None, pattern=r"^(prevzem|dostava)$")
+
+
+class PotrditevVhod(BaseModel):
+    obvestilo_id: str = Field(pattern=ID_VZOREC)
 
 
 class Baterija(BaseModel):
@@ -131,6 +145,64 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable) -> APIRouter:
                             v_zgodovino=False)
         return {"potrjeno_do_seq": izid["potrjeno_do_seq"], "novi": izid["novi"], "podvojeni": izid["podvojeni"],
                 "zavrnjeni": izid["zavrnjeni"], "gps": frek}
+
+    # ---------- naloge in stanja ----------
+    @r.get("/voznik/naloga")
+    async def naloga(v: dict = Depends(voznik)):
+        nv = C().naloge_voznikov
+        if nv.trenutni(v["enota"]) and not nv.pot(v["enota"]):
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(nv.izracunaj_pot(v["enota"]), 5)
+        return nv.za_voznika(v["enota"])
+
+    @r.post("/voznik/stanje")
+    async def stanje(s: StanjeVhod, v: dict = Depends(voznik)):
+        return C().naloge_voznikov.spremeni(v["enota"], s.stanje, s.naloga_id, s.akcija)
+
+    @r.post("/voznik/potrdi")
+    async def potrdi(p: PotrditevVhod, v: dict = Depends(voznik)):
+        return C().naloge_voznikov.potrdi(v["enota"], p.obvestilo_id)
+
+    @r.get("/voznik/dogodki")
+    async def dogodki(od: int = 0, zagon: str | None = None, v: dict = Depends(voznik)):
+        """Polling rezerva za /ws/voznik."""
+        o = C().naloge_voznikov.objava
+        return {"zagon": o.zagon, "seq": o.seq, "dogodki": o.od(v["enota"], od, zagon)}
+
+    @r.websocket("/ws/voznik")
+    async def ws_voznik(sock: WebSocket):
+        """Prvo sporočilo: {"zeton": dostopni, "od": seq, "zagon": id}. Žeton ni v URL (dnevniki).
+        Strežnik vsakih 15 s pošlje {"tip": "ziv"} in ob tem preveri, da seja še velja."""
+        await sock.accept()
+        c = C()
+        try:
+            prvo = await asyncio.wait_for(sock.receive_json(), 10)
+            v = c.avtentikacija.preveri_dostop(str(prvo.get("zeton", "")))
+        except (NapakaPrijave, asyncio.TimeoutError, ValueError, WebSocketDisconnect, RuntimeError, AttributeError):
+            with contextlib.suppress(Exception):
+                await sock.send_json({"tip": "napaka", "podatki": {"napaka": "neveljaven žeton"}})
+                await sock.close(code=4401)
+            return
+        o = c.naloge_voznikov.objava
+        q: asyncio.Queue = asyncio.Queue(maxsize=200)
+        o.narocniki.setdefault(v["enota"], set()).add(q)
+        try:
+            await sock.send_json({"tip": "pozdrav", "zagon": o.zagon, "seq": o.seq, "podatki": {"enota_id": v["enota"]}})
+            for s in o.od(v["enota"], int(prvo.get("od") or 0), prvo.get("zagon")):
+                await sock.send_json(s)
+            while True:
+                try:
+                    await sock.send_json(await asyncio.wait_for(q.get(), 15))
+                except asyncio.TimeoutError:
+                    c.avtentikacija.preveri_dostop(str(prvo.get("zeton", "")))  # potekel/preklican -> zapri
+                    await sock.send_json({"tip": "ziv", "cas": time.time()})
+        except NapakaPrijave:
+            with contextlib.suppress(Exception):
+                await sock.close(code=4401)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            o.narocniki.get(v["enota"], set()).discard(q)
 
     # ---------- dispečer / skrbnik ----------
     @r.post("/enote/{enota_id}/koda")
