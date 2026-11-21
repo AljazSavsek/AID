@@ -120,3 +120,8 @@ Prijava: enota `RV-1`, koda `DEMO-RV1`. Telefon (Android): `flet build apk`, nat
 | `POST /voznik/stanje` | prejeto, na_poti, na_prizoriscu, pacient_nalozen, dostavljeno, opravljeno, prosto, ni_na_voljo |
 | `POST /voznik/potrdi` | potrditev prejema plana |
 | `WS /ws/voznik`, `GET /voznik/dogodki` | spremembe za napravo (prvo sporočilo: `{"zeton": …}`) |
+| `POST /voznik/sporocilo`, `/voznik/sporocilo/{id}/prebrano` | sporočila ekipe (hitra ali besedilo) |
+| `POST /voznik/okvara`, `POST /voznik/ovira` | predloga ekipe (dispečer ju potrdi) |
+
+Dispečer (razdelek **Ekipe**): `GET /ekipe/predlogi`, `POST /ekipe/predlog/{id}/{sprejmi\|spremeni\|zavrni}`,
+`GET /ekipe/eskalacije`, `GET /ekipe/sporocila`, `POST /enote/{id}/sporocilo`, `GET /ovire`.

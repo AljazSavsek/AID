@@ -62,7 +62,7 @@ class Sinhronizacija:
             return True
         if m.get("seq"):
             self.seq = max(self.seq, m["seq"])
-        return m.get("tip") in ("plan", "pot", "naloga", "pozdrav")
+        return m.get("tip") in ("plan", "pot", "naloga", "pozdrav", "sporocilo", "predlog")
 
     async def _ws(self) -> None:
         import websockets  # neobvezno na strežniku; v aplikaciji je odvisnost

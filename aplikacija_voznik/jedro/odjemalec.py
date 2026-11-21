@@ -158,6 +158,18 @@ class Odjemalec:
     async def potrdi(self, obvestilo_id: str) -> dict:
         return await self._zahteva("POST", "/voznik/potrdi", {"obvestilo_id": obvestilo_id})
 
+    async def sporocilo(self, koda: str | None = None, besedilo: str | None = None) -> dict:
+        return await self._zahteva("POST", "/voznik/sporocilo", {"koda": koda} if koda else {"besedilo": besedilo})
+
+    async def prebrano(self, sporocilo_id: str) -> dict:
+        return await self._zahteva("POST", f"/voznik/sporocilo/{sporocilo_id}/prebrano")
+
+    async def okvara(self, opis: str | None = None) -> dict:
+        return await self._zahteva("POST", "/voznik/okvara", {"opis": opis})
+
+    async def ovira(self, vrsta: str, opis: str | None = None) -> dict:
+        return await self._zahteva("POST", "/voznik/ovira", {"vrsta": vrsta, "opis": opis})
+
     async def dogodki(self, od: int, zagon: str | None) -> dict:
         return await self._zahteva("GET", "/voznik/dogodki", params={"od": od, **({"zagon": zagon} if zagon else {})})
 
