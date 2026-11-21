@@ -1,0 +1,84 @@
+{
+ "opis": "Scenarij 1: padec z lestve, Ljubljana – Šiška",
+ "klicatelj": "+386 41 555 238",
+ "segmenti": [
+  {
+   "govorec": "dispecer",
+   "od_s": 0.0,
+   "do_s": 2.6,
+   "besedilo": "Nujna medicinska pomoč, dober dan. Kaj se je zgodilo?"
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 3.1,
+   "do_s": 7.9,
+   "besedilo": "Dober dan, moj oče je padel z lestve, leži na tleh in se ne odziva!"
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 8.6,
+   "do_s": 10.4,
+   "besedilo": "Razumem. Povejte mi točen naslov, kjer ste."
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 10.9,
+   "do_s": 15.8,
+   "besedilo": "Celovška cesta, mislim da 150, v Ljubljani, v Šiški."
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 16.3,
+   "do_s": 17.6,
+   "besedilo": "Ali oče diha?"
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 18.0,
+   "do_s": 22.7,
+   "besedilo": "Ja, diha, ampak zelo težko. In iz glave mu teče kri."
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 23.2,
+   "do_s": 24.6,
+   "besedilo": "Koliko je star vaš oče?"
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 25.0,
+   "do_s": 31.9,
+   "besedilo": "Dvainšestdeset. Oprostite, ni 150, je 105! Rumena hiša za bencinsko črpalko."
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 32.5,
+   "do_s": 34.4,
+   "besedilo": "Ali je še kdo poškodovan?"
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 34.9,
+   "do_s": 37.6,
+   "besedilo": "Ne, samo oče. Sosed je tukaj z mano."
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 38.1,
+   "do_s": 40.0,
+   "besedilo": "Na kateri številki ste dosegljivi?"
+  },
+  {
+   "govorec": "klicatelj",
+   "od_s": 40.4,
+   "do_s": 43.0,
+   "besedilo": "Na tej, 041 555 238."
+  },
+  {
+   "govorec": "dispecer",
+   "od_s": 43.6,
+   "do_s": 48.5,
+   "besedilo": "Pomoč je obveščena. Očeta ne premikajte, rano pritisnite s čisto krpo."
+  }
+ ]
+}

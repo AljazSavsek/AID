@@ -1,0 +1,60 @@
+{
+  "opis": "Ljubljana, center UKC, 4 vozila, 2 motorista, 1 helikopter, 8 nalog. Časovna okna so v minutah od začetka.",
+  "centri": [
+    {"id": "C-UKC", "ime": "UKC Ljubljana", "lat": 46.05452, "lon": 14.52218, "sprejemna_mesta": 6, "zasedena": 2},
+    {"id": "C-PD", "ime": "Bolnišnica dr. Petra Držaja", "lat": 46.06630, "lon": 14.48680, "sprejemna_mesta": 3, "zasedena": 1}
+  ],
+  "enote": [
+    {"id": "RV-1", "tip": "vozilo", "ime": "Reševalno vozilo 1", "lat": 46.0601, "lon": 14.4920, "stanje": "na_nalogi",
+     "kapaciteta": {"pacienti": 1, "oprema": 2}, "tovor": [{"naloga_id": "N-3", "pacienti": 0, "oprema": 1}], "na_voljo_od": 0},
+    {"id": "RV-2", "tip": "vozilo", "ime": "Reševalno vozilo 2", "lat": 46.05452, "lon": 14.52218, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 1, "oprema": 2}, "tovor": [], "na_voljo_od": 0},
+    {"id": "RV-3", "tip": "vozilo", "ime": "Reševalno vozilo 3", "lat": 46.0840, "lon": 14.5113, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 1, "oprema": 2}, "tovor": [], "na_voljo_od": 0},
+    {"id": "RV-4", "tip": "vozilo", "ime": "Reševalno vozilo 4", "lat": 46.0454, "lon": 14.4755, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 1, "oprema": 2}, "tovor": [], "na_voljo_od": 0},
+    {"id": "MOT-1", "tip": "motorist", "ime": "Motorist 1", "lat": 46.0569, "lon": 14.5058, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 0, "oprema": 1}, "tovor": [], "na_voljo_od": 0},
+    {"id": "MOT-2", "tip": "motorist", "ime": "Motorist 2", "lat": 46.0488, "lon": 14.5420, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 0, "oprema": 1}, "tovor": [], "na_voljo_od": 0},
+    {"id": "HELI-1", "tip": "helikopter", "ime": "Helikopter", "lat": 46.2237, "lon": 14.4576, "stanje": "prosto",
+     "kapaciteta": {"pacienti": 1, "oprema": 1}, "tovor": [], "na_voljo_od": 0}
+  ],
+  "naloge": [
+    {"id": "N-1", "tip": "prevoz_pacienta", "opis": "Premestitev pacienta (dializa)", "prioriteta": 4,
+     "prevzem": {"lat": 46.0370, "lon": 14.5160, "naslov": "Ižanska cesta 10, Ljubljana"},
+     "dostava": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana", "center_id": "C-UKC"},
+     "okno_od": 0, "okno_do": 90, "kolicina": {"pacienti": 1, "oprema": 0}},
+    {"id": "N-2", "tip": "prevoz_pacienta", "opis": "Odpust domov", "prioriteta": 5,
+     "prevzem": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana"},
+     "dostava": {"lat": 46.0665, "lon": 14.5425, "naslov": "Šmartinska cesta 152, Ljubljana"},
+     "okno_od": 30, "okno_do": 180, "kolicina": {"pacienti": 1, "oprema": 0}},
+    {"id": "N-3", "tip": "prevoz_opreme", "opis": "Defibrilator za ZD Šiška", "prioriteta": 3,
+     "prevzem": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana"},
+     "dostava": {"lat": 46.0740, "lon": 14.4850, "naslov": "ZD Šiška"},
+     "okno_od": 0, "okno_do": 45, "kolicina": {"pacienti": 0, "oprema": 1}},
+    {"id": "N-4", "tip": "nujna_voznja", "opis": "Bolečina v prsih", "prioriteta": 2,
+     "prevzem": {"lat": 46.0300, "lon": 14.5050, "naslov": "Rudnik, Ljubljana"},
+     "dostava": null, "okno_od": 0, "okno_do": 15, "kolicina": {"pacienti": 0, "oprema": 0}},
+    {"id": "N-5", "tip": "prevoz_pacienta", "opis": "Premestitev na kardiologijo", "prioriteta": 3,
+     "prevzem": {"lat": 46.06630, "lon": 14.48680, "naslov": "Bolnišnica dr. Petra Držaja"},
+     "dostava": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana", "center_id": "C-UKC"},
+     "okno_od": 10, "okno_do": 75, "kolicina": {"pacienti": 1, "oprema": 0}},
+    {"id": "N-6", "tip": "prevoz_opreme", "opis": "Kri za OB Novo mesto (predaja na helioporu)", "prioriteta": 2,
+     "prevzem": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana"},
+     "dostava": {"lat": 45.8030, "lon": 15.1690, "naslov": "SB Novo mesto"},
+     "okno_od": 0, "okno_do": 70, "kolicina": {"pacienti": 0, "oprema": 1}},
+    {"id": "N-7", "tip": "nujna_voznja", "opis": "Padec starejše osebe", "prioriteta": 3,
+     "prevzem": {"lat": 46.0395, "lon": 14.4930, "naslov": "Cesta v Mestni log 55, Ljubljana"},
+     "dostava": null, "okno_od": 0, "okno_do": 25, "kolicina": {"pacienti": 0, "oprema": 0}},
+    {"id": "N-8", "tip": "prevoz_pacienta", "opis": "Pregled na ortopediji", "prioriteta": 5,
+     "prevzem": {"lat": 46.0290, "lon": 14.4100, "naslov": "Glavna cesta 5, Brezovica"},
+     "dostava": {"lat": 46.05452, "lon": 14.52218, "naslov": "UKC Ljubljana", "center_id": "C-UKC"},
+     "okno_od": 60, "okno_do": 240, "kolicina": {"pacienti": 1, "oprema": 0}}
+  ],
+  "cakajoci_klici": [
+    {"stevilka": "+386 41 555 238", "omrezje": "Ljubljana – Šiška", "demo": "klic1"},
+    {"stevilka": "+386 31 207 114", "omrezje": "Domžale"},
+    {"stevilka": "+386 40 883 090", "omrezje": "Ljubljana – Vič"}
+  ]
+}
