@@ -24,6 +24,7 @@ from dnevnik.shramba import Shramba
 from karta.ploscice import NiNaVoljo, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
 from voznik.avtentikacija import NapakaPrijave
+from voznik.ekipa import NapakaEkipe
 from voznik.naloge import NapakaStanja
 from voznik.vmesnik import ustvari_usmerjevalnik
 from zajem.simulator import nalozi_klic, predvajaj
@@ -129,6 +130,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         while True:
             with contextlib.suppress(Exception):
                 objavi_signale(c)
+            with contextlib.suppress(Exception):
+                c.naloge_voznikov.preveri_eskalacije()
             await asyncio.sleep(2)
 
     async def _ciscenje(c: Center):
@@ -157,6 +160,10 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
     async def napaka_prijave(_: Request, e: NapakaPrijave):
         return JSONResponse({"napaka": str(e)}, status_code=e.koda,
                             headers={"WWW-Authenticate": "Bearer"} if e.koda == 401 else None)
+
+    @app.exception_handler(NapakaEkipe)
+    async def napaka_ekipe(_: Request, e: NapakaEkipe):
+        return JSONResponse({"napaka": str(e)}, status_code=e.koda)
 
     @app.exception_handler(NapakaStanja)
     async def napaka_stanja(_: Request, e: NapakaStanja):
@@ -224,7 +231,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
             raise HTTPException(422, "neznan tip dogodka")
         d = nov(v.tip, v.parametri, "dispecer", "sprejeto")  # ročni vnos dispečerja = potrjen
         d["potrdil"] = u
-        plan = await C().uveljavi_dogodek(d, u)
+        plan = await C().uveljavi_dogodek(d, u, planiraj=v.tip != "ovira_na_cesti")
         return {"dogodek": d, "plan_predlog": plan}
 
     @app.get("/plan/aktiven")

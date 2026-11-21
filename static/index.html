@@ -127,6 +127,18 @@
 <!-- ================= POGLED: PLAN IN KARTA ================= -->
 <main class="plan-pogled skrito" id="pogled-plan">
   <section class="plosca plan-enote" aria-label="Enote">
+    <div class="plosca-glava"><h2>Ekipe</h2></div>
+    <div class="ekipe">
+      <ul id="ekipe-eskalacije" class="ekipe-seznam" aria-label="Eskalacije"></ul>
+      <div id="ekipe-predlogi" class="ekipe-predlogi" aria-label="Predlogi ekip"></div>
+      <ul id="ekipe-sporocila" class="ekipe-seznam" aria-label="Sporočila"></ul>
+      <form id="obrazec-sporocila" class="obrazec-dogodka">
+        <label>Enota<select id="sp-enota"></select></label>
+        <label>Hitro sporočilo<select id="sp-hitro"></select></label>
+        <label>Besedilo<input id="sp-besedilo" maxlength="500"></label>
+        <button class="gumb temen" type="submit">Pošlji ekipi</button>
+      </form>
+    </div>
     <div class="plosca-glava"><h2>Enote</h2></div>
     <ul id="seznam-enot" class="seznam-enot"></ul>
     <div class="plosca-glava"><h2>Ročni dogodek</h2></div>
@@ -177,5 +189,6 @@
 <script src="js/povezava.js"></script>
 <script src="js/klic.js"></script>
 <script src="js/plan.js"></script>
+<script src="js/ekipe.js"></script>
 </body>
 </html>
