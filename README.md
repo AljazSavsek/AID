@@ -1,7 +1,14 @@
 # AID – regijski dispečerski center z AI poslušalcem
 
 Prototip za AdaHack 2026 (Epilogov izziv). **AI predlaga, dispečer odloča.**
-Obseg tega dela je samo regijski center; pogledi za reševalce na terenu niso vključeni (glej [ODLOCITVE.md](ODLOCITVE.md)).
+
+Veja `voznik` vsebuje **oba dela skupaj**: regijski center (dispečer) in zaslon v reševalnem vozilu (voznik),
+ki si delita isti strežnik. Veja `regijski-center` vsebuje samo del za dispečerja.
+
+| Zaslon | Naslov |
+|---|---|
+| Regijski center (dispečer) | <http://localhost:8000/> |
+| Reševalno vozilo (voznik) | <http://localhost:8000/voznik.html?enota=RV-2> |
 
 ```
 Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremeni / zavrne)
@@ -70,11 +77,22 @@ prioritete in enote. **UREDI PODATKE** odpre vsa polja, **ODOBRI IN POŠLJI** up
 prioritetah, dodatni km, nepokrite naloge, razlaga), **Pokaži alternativo**, **Potrdi plan**, časovnica po enotah in ročni vnos
 dogodkov (okvara, megla, zmogljivost centra, prioriteta).
 
+## Zaslon voznika
+
+Nočna 3D karta s potjo po cestah (s prometom), navodila za zavijanje v slovenščini, kartice zgoraj levo
+(čas do prihoda, obveščeni v bližini – simulacija, opozorila v živo: zastoji na poti in obvestila centra) in naloga desno.
+Voznik vidi **samo naloge iz potrjenega plana in podatke, ki jih je potrdil dispečer**.
+
+- statusi **NA POTI → NA KRAJU → PREVZETO / DOSTAVLJENO** gredo dispečerju in v revizijo,
+- **Sporočilo centru** (npr. »Vozilo je obstalo. Oprema je še v njem.«) → AI predlaga dogodek → dispečer ga potrdi
+  v pogledu »Plan in karta« (Sporočila ekip) → planer predlaga nov plan → dispečer ga potrdi → vozilo dobi novo nalogo,
+- **Simuliraj vožnjo** (demo) premika vozilo po poti; dispečer vidi premik na karti.
+
 ## Moduli
 
 | Mapa | Vsebina |
 |---|---|
-| `api/` | FastAPI, WebSocket `/ws`, polling `/stanje`, storitev centra (`storitev.py`) |
+| `api/` | FastAPI, WebSocket `/ws`, polling `/stanje`, storitev centra (`storitev.py`), ekipa na terenu (`ekipa.py`) |
 | `dnevnik/` | podatkovni model, SQLite (WAL) in revizijska sled, izvoz JSON |
 | `poslusalec/` | AI poslušalec: shema, preverjanje dokazov, oblak → Ollama → pravila |
 | `geokodiranje/` | GURS → lokalni register → Nominatim → klik na karto |

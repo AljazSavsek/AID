@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1D2228">
+  <title>AID · Reševalno vozilo</title>
+  <link rel="icon" href="img/aid-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="css/aid.css">
+  <link rel="stylesheet" href="css/voznik.css">
+</head>
+<body class="voznik">
+<header class="glava temna">
+  <img class="logo" src="img/aid-logo-svetel.svg" alt="AID">
+  <label class="izbira-enote">Vozilo
+    <select id="enota" aria-label="Vozilo"></select>
+  </label>
+  <span class="znacka" id="status-enote">—</span>
+  <div class="desno">
+    <span class="povezava" id="povezava">Povezovanje …</span>
+    <span class="ura" data-ura>--:--:--</span>
+  </div>
+</header>
+<div class="pas-povezave skrito" id="pas-povezave" role="status"></div>
+
+<main class="nav">
+  <div id="karta" class="nav-karta" aria-label="Navigacija"></div>
+
+  <!-- zgoraj levo: informacijske kartice -->
+  <section class="kartice-v" aria-label="Informacije">
+    <article class="kv eta">
+      <div class="kv-oznaka">Čas do prihoda</div>
+      <div class="eta-min"><span id="eta-min">—</span><small>min</small></div>
+      <div class="eta-podatki"><span id="eta-ura">—</span> · <span id="eta-km">—</span> <span class="kakovost-v" id="eta-kakovost"></span></div>
+      <div class="eta-zamuda skrito" id="eta-zamuda"></div>
+    </article>
+    <article class="kv ljudje">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-7 9a7 7 0 0 1 14 0Z" fill="currentColor"/><path d="M19.5 4.5a8 8 0 0 1 0 11M4.5 4.5a8 8 0 0 0 0 11" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+      <div><div class="kv-oznaka">Obveščenih v bližini</div><div class="ljudje-st"><span id="obvesceni">—</span><small id="obvesceni-op">simulacija</small></div></div>
+    </article>
+    <article class="kv opozorila">
+      <div class="kv-oznaka">Opozorila v živo</div>
+      <ul id="opozorila"><li class="ni">Ni opozoril na poti.</li></ul>
+    </article>
+  </section>
+
+  <!-- zgoraj na sredini: naslednji manever -->
+  <section class="manever skrito" id="manever" aria-live="polite">
+    <div class="manever-ikona" id="manever-ikona">↑</div>
+    <div><div class="manever-razdalja" id="manever-razdalja">—</div><div class="manever-besedilo" id="manever-besedilo">—</div></div>
+  </section>
+
+  <!-- desno: naloga -->
+  <section class="naloga-v" aria-label="Naloga">
+    <div class="naloga-glava"><span class="prio" id="prio">P–</span><div><div class="naloga-tip" id="naloga-tip">Ni naloge</div><div class="naloga-akcija" id="naloga-akcija">Čakam na potrjen plan dispečerja</div></div></div>
+    <div class="naslov-v" id="naslov">—</div>
+    <div class="orient-v" id="orientacija"></div>
+    <dl class="podatki-v" id="podatki"></dl>
+    <div class="naslednji-v" id="naslednji"></div>
+    <div class="statusi" id="statusi"></div>
+    <div class="akcije-v">
+      <button class="gumb" id="gumb-sporocilo">Sporočilo centru</button>
+      <button class="gumb" id="gumb-simulacija" title="Demo: vozilo se premika po poti">▶ Simuliraj vožnjo</button>
+      <button class="gumb" id="gumb-sledi" title="Kamera sledi vozilu">⌖</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg-sporocilo" class="dlg-v">
+  <form method="dialog">
+    <h3>Sporočilo regijskemu centru</h3>
+    <p class="pojasnilo-v">AI iz sporočila pripravi predlog, dispečer ga potrdi.</p>
+    <div class="hitra">
+      <button type="button" data-hitro="Vozilo je obstalo. Oprema je še v njem.">Vozilo je obstalo, tovor v vozilu</button>
+      <button type="button" data-hitro="Potrebujemo dodatno ekipo na kraju.">Potrebujemo dodatno ekipo</button>
+      <button type="button" data-hitro="Pacient prevzet, na poti v bolnišnico.">Pacient prevzet</button>
+    </div>
+    <textarea id="sporocilo-besedilo" rows="3" placeholder="Ali napišite sporočilo …"></textarea>
+    <div class="vrstica-gumbov"><button class="gumb" value="preklici">Prekliči</button><button class="gumb rdec" id="poslji-sporocilo" value="poslji">POŠLJI</button></div>
+  </form>
+</dialog>
+
+<script src="vendor/maplibre/maplibre-gl.js"></script>
+<script src="js/skupno.js"></script>
+<script src="js/povezava.js"></script>
+<script src="js/voznik.js"></script>
+</body>
+</html>

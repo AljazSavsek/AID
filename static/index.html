@@ -21,6 +21,7 @@
     <button data-pogled="plan">Plan in karta <span class="znacka rdeca skrito" id="znacka-plan">nov predlog</span></button>
   </nav>
   <div class="desno">
+    <a class="gumb majhen" href="voznik.html" target="_blank" rel="noopener" title="Demo: zaslon v reševalnem vozilu">Zaslon vozila ↗</a>
     <button class="gumb majhen" id="gumb-revizija">Revizijska sled</button>
     <span class="povezava" id="povezava">Povezovanje …</span>
     <label class="uporabnik" title="Prijavljeni dispečer"><span class="avatar" id="avatar">MN</span>
@@ -128,6 +129,8 @@
 <!-- ================= POGLED: PLAN IN KARTA ================= -->
 <main class="plan-pogled skrito" id="pogled-plan">
   <section class="plosca plan-enote" aria-label="Enote">
+    <div class="plosca-glava"><h2>Sporočila ekip</h2><span class="znacka rdeca skrito" id="st-sporocil">0</span></div>
+    <div id="sporocila-ekip" class="sporocila-ekip"><p class="prazno-besedilo">Ni novih sporočil.</p></div>
     <div class="plosca-glava"><h2>Enote</h2></div>
     <ul id="seznam-enot" class="seznam-enot"></ul>
     <div class="plosca-glava"><h2>Ročni dogodek</h2></div>

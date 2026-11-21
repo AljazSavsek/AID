@@ -24,6 +24,7 @@ from karta.ploscice import NiNaVoljo, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
 from zajem.simulator import nalozi_klic, predvajaj
 
+from . import ekipa
 from .storitev import Center, NapakaStoritve
 
 KOREN = Path(__file__).resolve().parent.parent
@@ -106,12 +107,34 @@ class OdsekiVhod(BaseModel):
     odseki: list[Odsek] = Field(max_length=80)
 
 
+class Lokacija(BaseModel):
+    lat: float
+    lon: float
+    smer: float | None = None
+    hitrost_kmh: float | None = None
+
+
+class StatusVhod(BaseModel):
+    naloga_id: str
+    akcija: str
+
+
+class SporociloVhod(BaseModel):
+    enota_id: str
+    besedilo: str = Field(max_length=500)
+
+
+class DogodekPotrditev(BaseModel):
+    parametri: dict | None = None
+
+
 class DemoKlic(BaseModel):
     hitrost: float = 1.0
 
 
 def uporabnik(x_uporabnik: str | None = Header(default=None)) -> str:
-    return (x_uporabnik or "dispečer").strip()[:60]
+    from urllib.parse import unquote
+    return (unquote(x_uporabnik) if x_uporabnik else "dispečer").strip()[:60]
 
 
 def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
@@ -307,6 +330,35 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True) -> FastAPI:
         c = C()
         return {"usmerjanje": c.usmerjanje.zdravje(), "poslusalec_zadnji_vir": c.poslusalec.zadnji_vir,
                 "ai_na_voljo": c.ai_na_voljo, "ws_narocniki": len(c.objava.narocniki)}
+
+    # ---------- ekipa na terenu (voznik) ----------
+    @app.get("/voznik/{enota_id}")
+    async def voznik(enota_id: str):
+        return await ekipa.pregled(C(), enota_id)
+
+    @app.post("/enota/{enota_id}/lokacija")
+    async def enota_lokacija(enota_id: str, v: Lokacija):
+        return ekipa.lokacija(C(), enota_id, v.lat, v.lon, v.smer, v.hitrost_kmh)
+
+    @app.post("/enota/{enota_id}/status")
+    async def enota_status(enota_id: str, v: StatusVhod, u: str = Depends(uporabnik)):
+        return ekipa.status(C(), enota_id, v.naloga_id, v.akcija, u)
+
+    @app.post("/sporocilo")
+    async def sporocilo(v: SporociloVhod, u: str = Depends(uporabnik)):
+        return await ekipa.sporocilo(C(), v.enota_id, v.besedilo, u)
+
+    @app.get("/dogodki")
+    async def dogodki(stanje: str | None = None):
+        return [d for d in C().db.vsi("dogodek") if stanje is None or d["stanje"] == stanje]
+
+    @app.post("/dogodek/{dogodek_id}/sprejmi")
+    async def dogodek_sprejmi(dogodek_id: str, v: DogodekPotrditev | None = None, u: str = Depends(uporabnik)):
+        return await ekipa.sprejmi_dogodek(C(), dogodek_id, u, v.parametri if v else None)
+
+    @app.post("/dogodek/{dogodek_id}/zavrni")
+    async def dogodek_zavrni(dogodek_id: str, v: Razlog | None = None, u: str = Depends(uporabnik)):
+        return ekipa.zavrni_dogodek(C(), dogodek_id, u, v.razlog if v else None)
 
     # ---------- karta (posrednik ploščic; ključ ostane na strežniku) ----------
     ploscice = Ploscice()
