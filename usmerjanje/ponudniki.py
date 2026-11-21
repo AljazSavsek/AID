@@ -23,8 +23,16 @@ class NapakaPonudnika(Exception):
     pass
 
 
-class Omejitev(NapakaPonudnika):
-    """Ponudnik je zavrnil zaradi omejitve hitrosti (HTTP 429/403 QPS) – ni izpad."""
+class NiIzpad(NapakaPonudnika):
+    """Napaka za to zahtevo, ponudnik pa deluje (ne šteje v varovalko)."""
+
+
+class Omejitev(NiIzpad):
+    """Ponudnik je zavrnil zaradi omejitve hitrosti (HTTP 429) – ni izpad."""
+
+
+class NiPoti(NiIzpad):
+    """Za ti točki ponudnik ne najde poti (npr. točka ni ob cesti) – ni izpad."""
 
 
 class Omejevalnik:
@@ -120,6 +128,10 @@ class TomTom(_HttpPonudnik):
                     continue
                 raise Omejitev("omejitev hitrosti")
             break
+        if r.status_code == 400 and "NO_ROUTE_FOUND" in r.text:
+            raise NiPoti("ni poti med točkama")
+        if r.status_code == 400:
+            raise NiIzpad(f"HTTP 400: {r.text[:120]}")
         if r.status_code != 200:
             raise NapakaPonudnika(f"HTTP {r.status_code}: {r.text[:120]}")
         route = r.json()["routes"][0]

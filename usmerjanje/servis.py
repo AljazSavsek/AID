@@ -19,7 +19,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from .ponudniki import Omejitev, Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena
+from .ponudniki import NiIzpad, Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena, zracna_razdalja_m
 
 dnevnik = logging.getLogger("usmerjanje")
 
@@ -167,6 +167,8 @@ class UsmerjevalniServis:
     async def _izracunaj(self, od, do, tip) -> Pot:
         if tip == "helikopter":
             return helikopter(od, do)
+        if zracna_razdalja_m(od, do) < 30:  # enota je že na cilju
+            return Pot(0.0, 0.0, [list(od), list(do)], self._razpolozljivi()[0].kakovost if self._razpolozljivi() else "ocena")
         kljuc = self._kljuc(od, do, tip)
         if kljuc in self._predpomnilnik:
             return self._predpomnilnik[kljuc]
@@ -198,13 +200,13 @@ class UsmerjevalniServis:
     async def _klic(self, p: Ponudnik, od, do, tip) -> Pot:
         try:
             pot = await p.izracunaj(od, do, tip)
-            if not (pot.cas_s > 0 and pot.razdalja_m >= 0):
+            if not (pot.cas_s >= 0 and pot.razdalja_m >= 0):
                 raise ValueError("neveljaven odgovor")
             self.varovalke[p.ime].uspeh(self.ura())
             return pot
         except asyncio.CancelledError:
             raise
-        except Omejitev as e:
+        except NiIzpad as e:
             dnevnik.warning("ponudnik %s: %s (ne šteje kot izpad)", p.ime, e)
             raise
         except Exception as e:  # noqa: BLE001
