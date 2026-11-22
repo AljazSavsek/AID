@@ -623,12 +623,15 @@ class Center:
         neznane = [e for e in dodatne if e not in enote or enote[e]["stanje"] in M.NERAZPOLOZLJIVA]
         if neznane:
             raise NapakaStoritve("Dodatne enote niso na voljo: " + ", ".join(neznane), 422)
+        opozorilo = None
         if dodatne:
+            # odloči dispečer (tudi preden je znano število poškodovanih); več enot, kot jih utemelji število
+            # poškodovanih, je dovoljeno, a zabeleženo kot opozorilo v reviziji in odgovoru
             n_posk = int(self._vrednost(klic_id, "stevilo_poskodovanih")[0] or 0)
             najvec = self.najvec_dodatnih(n_posk, self._vrednost(klic_id, "prioriteta")[0], self._vrednost(klic_id, "vrsta_dogodka")[0])
             if len(dodatne) > najvec:
-                raise NapakaStoritve(f"Za {n_posk} poškodovanih je dovoljenih največ {najvec} dodatnih enot – "
-                                     "popravite število poškodovanih ali dodatne enote.", 422)
+                opozorilo = (f"Poslanih {len(dodatne)} dodatnih enot, število poškodovanih ({n_posk or 'ni znano'}) "
+                             f"utemelji {najvec}.")
         dodatne_naloge = []
         for eid in dodatne:
             nd = M.naloga("nujna_voznja", dict(n["prevzem"]), n["prioriteta"], okno_od=n["okno_od"], okno_do=n["okno_do"],
@@ -639,11 +642,12 @@ class Center:
         k["dodatne_naloge"] = [x["id"] for x in dodatne_naloge]
         self.db.shrani("klic", k)
         self.db.revizija(uporabnik, "Klic", klic_id, "odobri_in_poslji", None,
-                         {"naloga_id": n["id"], "dodatne": {x["id"]: x["dodeljena_enota"] for x in dodatne_naloge}, "podatki": pot})
+                         {"naloga_id": n["id"], "dodatne": {x["id"]: x["dodeljena_enota"] for x in dodatne_naloge}, "podatki": pot,
+                          **({"opozorilo": opozorilo} if opozorilo else {})})
         for nd in dodatne_naloge:  # brez sprotnega planiranja – plan se izračuna enkrat za vse
             await self.uveljavi_dogodek(M.dogodek("nujna_naloga", {"naloga": nd}, "klic", "sprejeto"), uporabnik, planiraj=False)
         plan = await self.uveljavi_dogodek(d, uporabnik, zelena_enota=(n["id"], pot["predlagana_enota"]))
-        return {"naloga": n, "dodatne_naloge": dodatne_naloge, "plan_predlog": plan}
+        return {"naloga": n, "dodatne_naloge": dodatne_naloge, "plan_predlog": plan, "opozorilo": opozorilo}
 
     # ================= dogodki in plan =================
     async def uveljavi_dogodek(self, d: dict, uporabnik: str, zelena_enota: tuple | None = None,
