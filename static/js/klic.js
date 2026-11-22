@@ -25,7 +25,7 @@
   const KLJUCNA = ["prioriteta", "predlagana_enota", "dodatne_enote"];
   // kartica »Dodatne enote« je vidna le, ko jo AI predlaga ali jo dispečer vnese (večja nesreča)
   const vidno = (d) => !d.leSPredlogom || predlogiPolja(d.polje).some((p) => p.stanje !== "zastarelo") || S.urejanje[d.polje]
-    || (d.polje === "dodatne_enote" && najvecDodatnih() > 0);
+    || (d.polje === "dodatne_enote" && !!S.klic);  // dispečer lahko več enot doda že od začetka klica
   // število poškodovanih (potrjeno ali predlog AI) -> koliko enot sme dispečer poslati (vozilo na poškodovanega + motorist + helikopter)
   function stPoskodovanih() {
     const p = potrjenZa("stevilo_poskodovanih") || odprtiZa("stevilo_poskodovanih")[0];
@@ -35,6 +35,7 @@
   // enako kot strežnik (Center.najvec_dodatnih): ≥ 2 poškodovanih -> poškodovani + 1; prometna nesreča s P1 -> vsaj motorist
   const najvecDodatnih = () => Math.max(stPoskodovanih() >= 2 ? stPoskodovanih() + 1 : 0,
     vrednostPolja("vrsta_dogodka") === "prometna_nesreca" && Number(vrednostPolja("prioriteta")) === 1 ? 1 : 0);
+  const glavnaEnota = () => (potrjenZa("predlagana_enota") || odprtiZa("predlagana_enota")[0] || {}).vrednost;
   const dodatne = () => { const p = potrjenZa("dodatne_enote") || odprtiZa("dodatne_enote")[0]; return (p && Array.isArray(p.vrednost)) ? p.vrednost : []; };
   const VRSTE = { prometna_nesreca: "Prometna nesreča", padec: "Padec", bolecina_v_prsih: "Bolečina v prsih", nezavest: "Nezavest", porod: "Porod", drugo: "Drugo" };
   const PRIORITETE = { 1: "1 – življenjsko ogrožen", 2: "2 – zelo nujno", 3: "3 – nujno", 4: "4 – manj nujno", 5: "5 – ni nujno" };
@@ -298,7 +299,7 @@
         <td>${x.enota_id === izbrana ? '<span class="znacka temna">izbrano</span>'
           : dodatne().includes(x.enota_id) ? `<button class="gumb majhen" data-dodatna-enota="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"} title="Odstrani iz dodatnih enot">− dodatna</button>`
           : `<button class="gumb majhen ${prosto ? "temen" : ""}" data-izberi-enoto="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"}>Izberi</button>`
-            + (najvecDodatnih() && x.enota_id !== (p && p.vrednost) ? ` <button class="gumb majhen" data-dodatna-enota="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id && dodatne().length < najvecDodatnih() ? "" : "disabled"} title="Večja nesreča: pošlji tudi to enoto">+ dodatna</button>` : "")}</td></tr>`;
+            + (x.enota_id !== glavnaEnota() ? ` <button class="gumb majhen" data-dodatna-enota="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"} title="Pošlji tudi to enoto (več vozil)">+ dodatna</button>` : "")}</td></tr>`;
     }).join("")}</tbody></table>`;
   }
   function obsegHtml(p) {
@@ -529,12 +530,21 @@
     if (dod) {
       const id = dod.dataset.dodatnaEnota, zdaj = dodatne();
       const novo = zdaj.includes(id) ? zdaj.filter((x) => x !== id) : [...zdaj, id];
-      if (novo.length > najvecDodatnih()) { AID.obvestilo("Preveč enot", `Za ${stPoskodovanih()} poškodovanih največ ${najvecDodatnih()} dodatnih enot.`, true); return; }
+      if (novo.length > najvecDodatnih() && novo.length > zdaj.length)
+        AID.obvestilo("Več enot", `Dodanih ${novo.length} enot; število poškodovanih (${stPoskodovanih() || "ni znano"}) jih utemelji ${najvecDodatnih()}. Odločitev je vaša.`, false, 5000);
       try { await shraniVrednost("dodatne_enote", novo); izrisiVse.prisili = true; izrisiVse("predlagana_enota"); } catch (e2) { napaka(e2); }
       return;
     }
     const en = e.target.closest("[data-izberi-enoto]");
-    if (en) { try { await shraniVrednost("predlagana_enota", en.dataset.izberiEnoto); izrisiVse("predlagana_enota"); } catch (e2) { napaka(e2); } return; }
+    if (en) {
+      try {
+        const id = en.dataset.izberiEnoto;
+        await shraniVrednost("predlagana_enota", id);
+        if (dodatne().includes(id)) await shraniVrednost("dodatne_enote", dodatne().filter((x) => x !== id)); // glavna ni hkrati dodatna
+        izrisiVse.prisili = true; izrisiVse("predlagana_enota");
+      } catch (e2) { napaka(e2); }
+      return;
+    }
     const b = e.target.closest("[data-akcija]"); if (!b) return;
     const k = b.closest(".kartica"); const polje = k.dataset.polje;
     const a = b.dataset.akcija;
@@ -627,12 +637,14 @@
     const nepotrjeni = POLJA.filter((d) => !potrjenZa(d.polje) && odprtiZa(d.polje).length);
     const konflikti = [...S.predlogi.values()].filter((p) => p.nasprotuje_potrjenemu && p.stanje === "predlagano");
     const v = Object.fromEntries(POLJA.map((d) => [d.polje, potrjenZa(d.polje)?.vrednost]).filter(([, x]) => x != null));
+    const dod = (v.dodatne_enote || []).filter((x) => x !== v.predlagana_enota); // glavna ni hkrati dodatna (tudi strežnik)
     const ok = await AID.modal({
-      naslov: v.dodatne_enote && v.dodatne_enote.length ? `Odobri in pošlji ${1 + v.dodatne_enote.length} enot: ${[v.predlagana_enota, ...v.dodatne_enote].join(", ")}?`
+      naslov: dod.length ? `Odobri in pošlji ${1 + dod.length} enot: ${[v.predlagana_enota, ...dod].join(", ")}?`
         : `Odobri in pošlji enoti ${v.predlagana_enota}?`,
       html: `<p>Uporabljeni bodo <b>samo potrjeni</b> podatki (${Object.keys(v).length}). Planer pripravi predlog plana, ki ga potrdite v pogledu »Plan in karta«.</p>
         ${nepotrjeni.length ? `<p style="color:var(--rdeca)"><b>Nepotrjeni AI predlogi ne bodo uporabljeni:</b></p><ul>${nepotrjeni.map((d) => `<li>${esc(d.oznaka)}</li>`).join("")}</ul>` : ""}
         ${konflikti.length ? `<p style="color:var(--rdeca)"><b>${konflikti.length} AI opozoril nasprotuje potrjenim podatkom.</b></p>` : ""}
+        ${dod.length > najvecDodatnih() ? `<p style="color:var(--rdeca)"><b>Pošiljate ${dod.length} dodatnih enot; število poškodovanih (${stPoskodovanih() || "ni znano"}) jih utemelji ${najvecDodatnih()}.</b> Zabeleženo bo v revizijski sledi.</p>` : ""}
         <p><b>Povzetek:</b></p><ul><li>Prioriteta ${esc(PRIORITETE[v.prioriteta])}</li><li>${esc(v.naslov)}${v.orientacija ? " – " + esc(v.orientacija) : ""}</li>
         <li>${esc(VRSTE[v.vrsta_dogodka] || "")} ${v.stanje_pacienta ? "· " + esc(v.stanje_pacienta) : ""}</li></ul>`,
       gumbi: [{ besedilo: "Nazaj", vrednost: false }, { besedilo: "ODOBRI IN POŠLJI", vrednost: true, razred: "rdec" }],
@@ -646,6 +658,7 @@
       S.posiljanje = { naloga_id: r.naloga.id, enota: v.predlagana_enota, plan_id: r.plan_predlog && r.plan_predlog.id, stanje: "predlog" };
       $("obrazec").classList.add("poslano");
       izrisiNapredek();
+      if (r.opozorilo) AID.obvestilo("Več enot, kot jih utemelji število poškodovanih", r.opozorilo + " Zabeleženo v revizijski sledi.", true, 8000);
       if ((r.dodatne_naloge || []).length) AID.obvestilo("Večja nesreča", `Poslanih ${1 + r.dodatne_naloge.length} enot: ${[v.predlagana_enota, ...r.dodatne_naloge.map((n) => n.dodeljena_enota)].join(", ")}.`);
       if (r.plan_predlog) await potrdiPlanTukaj(r.plan_predlog, r.naloga);
     } catch (e) { napaka(e); izrisiNapredek(); }
