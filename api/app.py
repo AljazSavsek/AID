@@ -597,10 +597,11 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
             pp.posnetki_klica()
         except FileNotFoundError:
             raise HTTPException(503, "Manjkajo posnetki klica (poslusalec/zvok).")
-        if not zvok.whisper_na_voljo():
-            raise HTTPException(503, zvok.razlog_ni_whisperja())
-        if zvok.MODEL["stanje"] == "napaka" and not zvok.lahko_poskusi_znova():
-            raise HTTPException(503, "Prepis govora ni na voljo: " + zvok.MODEL["razlog"])
+        if zvok.nacin() == "whisper":  # demo (vnaprej določeno besedilo) Whisperja ne potrebuje
+            if not zvok.whisper_na_voljo():
+                raise HTTPException(503, zvok.razlog_ni_whisperja())
+            if zvok.MODEL["stanje"] == "napaka" and not zvok.lahko_poskusi_znova():
+                raise HTTPException(503, "Prepis govora ni na voljo: " + zvok.MODEL["razlog"])
         q = next((q for q in c.cakajoci if q.get("demo") == "zvok"), None)
         k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 51 318 774")
         konec = lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"  # noqa: E731

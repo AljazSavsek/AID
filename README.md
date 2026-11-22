@@ -98,7 +98,12 @@ Posnetke lahko kadarkoli zamenjate (ponovni zagon ni potreben): poljubno števil
 `NN_klicatelj.wav` (tudi `.mp3`, `.m4a`, `.ogg`, `.flac`), ali en posnetek celega klica brez vloge v imenu – ta se
 razdeli na Whisperjeve odseke (govorec »klicatelj«, dispečer lahko popravi). Druga mapa: `AID_ZVOK_MAPA`.
 
-Besedilo klica prihaja **samo iz Whisperja** – v aplikaciji ni vnaprej določenega besedila. Strežnik naloži model ob
+**Demo (privzeto):** zvok se predvaja kot pri pravem klicu, besedilo pa je vnaprej določeno – iz
+`poslusalec/zvok/prepis.json` ali, če te ni, iz zadnjega Whisperjevega prepisa istih posnetkov (`poslusalec/prepisi/`).
+Zadnji prepis shranite za demo z `python -m zajem.zamrzni_prepis`, ga po potrebi popravite in shranite v git.
+Samo Whisper: `AID_ZVOK_VIR=whisper`.
+
+V načinu Whisper prihaja besedilo klica **samo iz Whisperja** – v aplikaciji ni vnaprej določenega besedila. Strežnik naloži model ob
 zagonu (prvič ga prenese, `small` ~460 MB, potreben internet); stanje je v »Stanje sistema → Prepis govora«. Če Whisper
 ni na voljo, aplikacija pokaže razlog, klic pa dispečer zapisuje ročno. Preverjanje: `python diagnoza_zvok.py`. Zvok ostane na
 Zvok klica se predvaja v brskalniku dispečerja (gumb »Utišaj« ga utiša), prepis vsakega odseka pa se izpiše tudi v
