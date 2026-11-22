@@ -57,6 +57,7 @@
                     "MOT-1": "DEMO-MOT1", "MOT-2": "DEMO-MOT2", "HELI-1": "DEMO-HELI"},
   "cakajoci_klici": [
     {"stevilka": "+386 41 555 238", "omrezje": "Ljubljana – Šiška", "demo": "klic1"},
+    {"stevilka": "+386 51 318 774", "omrezje": "Zagorje ob Savi", "demo": "zvok"},
     {"stevilka": "+386 31 207 114", "omrezje": "Domžale"},
     {"stevilka": "+386 40 883 090", "omrezje": "Ljubljana – Vič"}
   ]

@@ -1,7 +1,24 @@
+"""Prepis govora klica (faster-whisper) – samostojno (ZAZENI.bat) ali kot del aplikacije AID.
+
+Samostojno: predvaja posnetke iz mape zvok/ in sproti izpisuje ter shranjuje prepis (prepisi/).
+V aplikaciji: `odseki_klica` daje odseke (govorec, besedilo, trajanje); strežnik jih doda v klic
+(zajem/zvok.py), kjer iz njih AI poslušalec (poslusalec/ai.py) pripravi predloge za dispečerja.
+Zvok ostane na strežniku; v vmesnik gre samo besedilo (specifikacija 2.7).
+"""
 import asyncio
 import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import time
+import wave
 from pathlib import Path
 from uuid import uuid4
+
+MAPA = Path(__file__).resolve().parent
+GOVORCI = {"dispecer": "Dispečer", "klicatelj": "Klicatelj"}
 
 
 class Prepis:
@@ -69,26 +86,99 @@ def prepisi_odsek(model, posnetek):
     return " ".join(s.text.strip() for s in odseki if s.text.strip())
 
 
-async def prepis_klica(model, predvajaj):
-    posnetki = sorted(Path(__file__).with_name("zvok").glob("*.wav"))
+def posnetki_klica(mapa=None):
+    posnetki = sorted(Path(mapa or MAPA / "zvok").glob("*.wav"))
     if not posnetki:
         raise FileNotFoundError("Manjka mapa zvok s posnetki simulacije.")
-    for posnetek in posnetki:
-        oznaka, vloga = posnetek.stem.split("_")
-        govorec = {"dispecer": "Dispečer", "klicatelj": "Klicatelj"}[vloga]
-        _, besedilo = await asyncio.gather(
-            asyncio.to_thread(predvajaj, posnetek),
-            asyncio.to_thread(prepisi_odsek, model, posnetek),
-        )
-        if besedilo:
-            yield oznaka, f"{govorec}: {besedilo}"
+    return posnetki
+
+
+def trajanje_s(posnetek):
+    with wave.open(str(posnetek)) as w:
+        return w.getnframes() / float(w.getframerate())
+
+
+async def odseki_klica(model, predvajaj=None, mapa=None):
+    """Za vsak posnetek (NN_vloga.wav) hkrati predvaja in prepiše; vrne slovar z vlogo govorca.
+    `model` je WhisperModel ali karkoli z metodo transcribe (npr. rezerva iz shranjenega prepisa)."""
+    for posnetek in posnetki_klica(mapa):
+        oznaka, vloga = posnetek.stem.split("_", 1)
+        if vloga not in GOVORCI:
+            continue
+        opravila = [asyncio.to_thread(prepisi_odsek, model, posnetek)]
+        if predvajaj:
+            opravila.append(asyncio.to_thread(predvajaj, posnetek))
+        besedilo = (await asyncio.gather(*opravila))[0]
+        yield {"oznaka": oznaka, "vloga": vloga, "govorec": GOVORCI[vloga], "besedilo": besedilo,
+               "trajanje_s": trajanje_s(posnetek), "posnetek": posnetek.name}
+
+
+async def prepis_klica(model, predvajaj):
+    async for o in odseki_klica(model, predvajaj):
+        if o["besedilo"]:
+            yield o["oznaka"], f"{o['govorec']}: {o['besedilo']}"
         else:
-            print(f"Odsek {oznaka}: model ni razbral govora.", flush=True)
+            print(f"Odsek {o['oznaka']}: model ni razbral govora.", flush=True)
 
 
 def predvajaj_windows(posnetek):
     import winsound
     winsound.PlaySound(str(posnetek), winsound.SND_FILENAME | winsound.SND_NODEFAULT)
+
+
+def predvajaj_lokalno(posnetek):
+    """Predvajanje na tem računalniku (Windows, macOS, Linux); brez predvajalnika počaka dolžino posnetka."""
+    sistem = platform.system()
+    if sistem == "Windows":
+        return predvajaj_windows(posnetek)
+    for ukaz in (["afplay"] if sistem == "Darwin" else []) + [["paplay"], ["aplay", "-q"], ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]]:
+        ukaz = ukaz if isinstance(ukaz, list) else [ukaz]
+        if shutil.which(ukaz[0]):
+            subprocess.run(ukaz + [str(posnetek)], check=False)
+            return
+    time.sleep(trajanje_s(posnetek))
+
+
+_modeli = {}
+
+
+def nalozi_model(ime=None):
+    """WhisperModel (enkrat na proces). Ime: AID_WHISPER_MODEL (privzeto small)."""
+    ime = ime or os.environ.get("AID_WHISPER_MODEL", "small")
+    if ime not in _modeli:
+        from faster_whisper import WhisperModel
+        _modeli[ime] = WhisperModel(ime, device="cpu", compute_type="int8",
+                                    cpu_threads=int(os.environ.get("AID_WHISPER_NITI", 4)))
+    return _modeli[ime]
+
+
+class ShranjenPrepis:
+    """Rezerva, ko Whisper ni na voljo: zadnji resnični prepis teh posnetkov (prepisi/klic_*.json),
+    razdeljen po govorcih. Uporabi se le, če se število odsekov ujema s posnetki."""
+
+    def __init__(self, mapa=None, posnetki=None):
+        posnetki = posnetki or posnetki_klica()
+        datoteke = sorted(Path(mapa or MAPA / "prepisi").glob("klic_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        self.odseki = None
+        for d in datoteke:
+            try:
+                besedilo = json.loads(d.read_text(encoding="utf-8"))["text"]
+            except (OSError, ValueError, KeyError):
+                continue
+            deli = re.findall(r"(Dispečer|Klicatelj):\s*(.*?)(?=\s*(?:Dispečer|Klicatelj):|\Z)", besedilo, re.S)
+            vloge = [p.stem.split("_", 1)[1] for p in posnetki]
+            if len(deli) == len(posnetki) and all(GOVORCI[v] == g for v, (g, _) in zip(vloge, deli)):
+                self.odseki = {p.name: b.strip() for p, (_, b) in zip(posnetki, deli)}
+                self.vir = d.name
+                break
+        if self.odseki is None:
+            raise FileNotFoundError("Ni shranjenega prepisa za te posnetke.")
+
+    def transcribe(self, pot, **_):
+        class _S:  # oblika kot pri faster-whisper
+            def __init__(self, t):
+                self.text = t
+        return [_S(self.odseki.get(Path(pot).name, ""))], None
 
 
 class Konzola:
@@ -108,7 +198,7 @@ async def zagon():
     print("Nalagam Whisper small. Ob prvem zagonu se model prenese. Prosim, počakaj.", flush=True)
     model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=4)
     print("Začetek simuliranega klica.", flush=True)
-    pot = await poslusaj(prepis_klica(model, predvajaj_windows), Konzola())
+    pot = await poslusaj(prepis_klica(model, predvajaj_lokalno), Konzola())
     print("Konec klica. Prepis je shranjen v", pot)
 
 

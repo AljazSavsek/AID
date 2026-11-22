@@ -565,7 +565,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
     async def demo_klic(v: DemoKlic, u: str = Depends(uporabnik)):
         """Sprejme prvi čakajoči klic in predvaja demo/klic1.json (namesto VoIP + STT)."""
         c = C()
-        q = next((q for q in c.cakajoci if q.get("demo")), None)
+        q = next((q for q in c.cakajoci if q.get("demo") == "klic1"), None)
         k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 41 555 238")
         segmenti = nalozi_klic()["segmenti"]
 
@@ -575,6 +575,34 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
 
         c._v_ozadju(predvajaj(segmenti, poslji, max(0.25, v.hitrost),
                               prekini=lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"))
+        return k
+
+    @app.post("/demo/klic-zvok")
+    async def demo_klic_zvok(v: DemoKlic, u: str = Depends(uporabnik)):
+        """Zvočni klic: posnetki poslusalec/zvok -> prepis govora (Whisper ali shranjen prepis) -> AI predlogi."""
+        from poslusalec import poslusalec as pp
+        from zajem.zvok import PrepisNiNaVoljo, predvajaj_zvocni_klic, whisper_na_voljo
+        c = C()
+        try:
+            pp.posnetki_klica()
+            if not whisper_na_voljo():
+                pp.ShranjenPrepis()  # rezerva mora obstajati, sicer klica ne začnemo
+        except FileNotFoundError:
+            raise HTTPException(503, "Prepis govora ni na voljo: namestite faster-whisper (pip install -r requirements-zvok.txt) "
+                                     "ali uporabite besedilni demo klic.")
+        q = next((q for q in c.cakajoci if q.get("demo") == "zvok"), None)
+        k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 51 318 774")
+        konec = lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"  # noqa: E731
+
+        async def tek():
+            try:
+                await predvajaj_zvocni_klic(c, k["id"], max(0.25, v.hitrost), prekini=konec)
+            except PrepisNiNaVoljo as e:
+                c.objava.objavi("opozorilo", {"vrsta": "prepis", "sporocilo": str(e)})
+            except Exception as e:  # noqa: BLE001 – klic ostane odprt za ročni zapis
+                logging.getLogger("prepis").exception("zvočni klic")
+                c.objava.objavi("opozorilo", {"vrsta": "prepis", "sporocilo": f"Prepis govora se je ustavil ({type(e).__name__}) – nadaljujte z ročnim zapisom."})
+        c._v_ozadju(tek())
         return k
 
     @app.post("/demo/izpad")

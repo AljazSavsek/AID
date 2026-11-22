@@ -235,3 +235,6 @@
 
 .navodilo-ekipi { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--besedilo-2); margin-top: 8px; }
 .navodilo-ekipi textarea { border: 1px solid var(--rob); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--besedilo); }
+
+.vrsta-klicev li.izbirno { cursor: pointer; }
+.vrsta-klicev li.izbirno:hover { border-color: var(--rdeca); }
