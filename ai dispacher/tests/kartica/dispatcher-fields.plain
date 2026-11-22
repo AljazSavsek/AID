@@ -1,0 +1,13 @@
+---
+module: kartica
+func_id: dispatcher-fields
+---
+***conformance tests***
+
+# complete-demo
+For the supplied simulated call, report the event type, its description, the address, the landmark, the patient's condition and one injured person. The card contains no other fields.
+
+***acceptance tests***
+
+# dispatcher-question
+Facts mentioned only in a dispatcher's question remain unknown when the caller answers "Ne vem."

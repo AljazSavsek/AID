@@ -1,0 +1,13 @@
+***implementation reqs***
+
+- :Implementation: uses Python 3.12 standard library and exposes build_card(text) in kartica.py for the listener.
+- :UnitTests: use unittest.
+
+***test reqs***
+
+- :ConformanceTests: use Python unittest and call build_card with complete labelled transcripts.
+
+***functional specs***
+
+# dispatcher-fields
+Given a Slovenian simulated call with Klicatelj: and Dispečer: labels, return a dictionary with exactly the keys vrsta_dogodka, opis, naslov, orientacija, stanje_pacienta and stevilo_poskodovanih, taken only from explicit caller statements. Each field contains naziv, vrednost, dokaz and status; dokaz is the supporting caller utterance. Missing data is null with status "manjka". stevilo_poskodovanih is an integer. Do not return any other field; the dispatcher assigns everything else manually. Recompute from the latest transcript after every correction.
