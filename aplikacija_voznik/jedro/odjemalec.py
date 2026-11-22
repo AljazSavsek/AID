@@ -177,6 +177,9 @@ class Odjemalec:
         return await self._zahteva("POST", "/voznik/polozaj", {"fiksi": fiksi, "poslano_ob": self.ura(),
                                                                **({"baterija": baterija} if baterija else {})})
 
+    async def heartbeat(self, paket: dict) -> dict:
+        return await self._zahteva("POST", "/voznik/heartbeat", paket)
+
     def ws_url(self) -> str:
         s = self.streznik
         return ("wss://" + s[8:] if s.startswith("https://") else "ws://" + s.removeprefix("http://")) + "/ws/voznik"

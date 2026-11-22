@@ -96,3 +96,6 @@
 .eskalacija { color: var(--rdeca); font-weight: 600; }
 .sporocilo.nujno { color: var(--rdeca); font-weight: 700; }
 .ekipe .razlog input { width: 100%; margin-top: 6px; border: 1px solid var(--rob); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+.st-hb { color: var(--siva, #5A6270); }
+.st-hb.izpad { color: #8A1525; font-weight: 700; }
+.st-preusmeritev { color: #1A7F37; font-weight: 600; }

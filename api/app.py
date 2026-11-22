@@ -11,6 +11,7 @@ import contextlib
 import hmac
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -334,6 +335,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
                 objavi_signale(c)
             with contextlib.suppress(Exception):
                 c.naloge_voznikov.preveri_eskalacije()
+            with contextlib.suppress(Exception):
+                c.heartbeati.preveri_izpade()
             await asyncio.sleep(2)
 
     async def _ciscenje(c: Center):
@@ -605,6 +608,19 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         import mimetypes
         vrsta = {".wav": "audio/wav", ".opus": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4"}.get(pot.suffix.lower()) or mimetypes.guess_type(pot.name)[0] or "audio/wav"
         return FileResponse(pot, media_type=vrsta, headers={"Cache-Control": "private, max-age=600"})
+
+    # ---------- heartbeat voznikov (shranjen v podatki/heartbeat/<datum>/<enota>.json) ----------
+    @app.get("/heartbeat")
+    async def heartbeat_zadnji():
+        return list(C().heartbeati.zadnji.values())
+
+    @app.get("/enote/{enota_id}/heartbeat")
+    async def heartbeat_enote(enota_id: str, datum: str | None = None, omejitev: int = 200):
+        if datum and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+            raise HTTPException(422, "datum: YYYY-MM-DD")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", enota_id):
+            raise HTTPException(422, "neveljavna enota")
+        return C().heartbeati.zgodovina(enota_id, datum, max(1, min(omejitev, 3000)))
 
     @app.get("/prepis/stanje")
     async def prepis_stanje():

@@ -265,7 +265,8 @@
       return `<li class="prejem">${odv.length && !dod.length ? "Naloga predana drugi enoti" : "Nov plan od dispečerja"} – potrdite prejem<small style="color:#fff">${esc(opis)}</small>
         <button data-potrdi="${esc(o.id)}">POTRDI PREJEM</button></li>`;
     });
-    if (p && p.obvoz) prejem.push('<li class="center"><b>OBVOZ</b> – pot se izogne oviri (dispečer)<small>sledite novim navodilom</small></li>');
+    if (p && p.preusmeritev) prejem.push(`<li class="center"><b>NOVA POT</b> – ${esc(p.preusmeritev.opis || p.preusmeritev.razlog)}<small>centrala je izračunala drugo pot · sledite novim navodilom</small></li>`);
+    else if (p && p.obvoz) prejem.push('<li class="center"><b>OBVOZ</b> – pot se izogne oviri (dispečer)<small>sledite novim navodilom</small></li>');
     if (prejem.length && navigator.vibrate) navigator.vibrate([200, 100, 200]);
     const prometna = ((p && p.opozorila) || []).map((o) => {
       const pred = Math.max(0, o.od_m - (V.sim ? V.sim.prevozeno : 0));
@@ -343,12 +344,30 @@
   /* ---------- položaj: paketi fiksov z zaporedno številko (idempotentno) ---------- */
   let seq = AID.beri("aid_gps_seq_" + naprava, 0);
   async function posljiFiks(lat, lon, hitrost_ms, smerStopinj, natancnost) {
+    V.zadnjiFiks = { lat, lon, hitrost_ms, smer: smerStopinj, natancnost, ts: Date.now() / 1000 };
     seq += 1; AID.pisi("aid_gps_seq_" + naprava, seq);
     const fiks = { seq, ts: Date.now() / 1000, lat, lon, natancnost: natancnost ?? 5 };
     if (hitrost_ms != null) fiks.hitrost = Math.max(0, Math.min(200, hitrost_ms));
     if (smerStopinj != null) fiks.smer = ((smerStopinj % 360) + 360) % 360;
     try { await api("/voznik/polozaj", { metoda: "POST", telo: { naprava_id: naprava, poslano_ob: Date.now() / 1000, fiksi: [fiks] } }); } catch (_) {}
   }
+  /* ---------- heartbeat vsakih 30 s: hitrost, lokacija, pot -> centrala (shrani ga v JSON) ---------- */
+  async function posljiHeartbeat() {
+    if (!V.n || !V.n.enota) return;
+    const f = V.zadnjiFiks, zdaj = Date.now() / 1000;
+    const svez = f && zdaj - f.ts < 35;
+    const lokacija = f ? { lat: f.lat, lon: f.lon } : { lat: V.n.enota.lat, lon: V.n.enota.lon };
+    if (lokacija.lat == null) return;
+    if (f && f.natancnost != null) lokacija.natancnost = Math.min(100000, f.natancnost);
+    if (f && f.smer != null) lokacija.smer = ((f.smer % 360) + 360) % 360;
+    const k = trenutni(), p = V.n.pot;
+    const pot = k ? { naloga_id: k.naloga_id, akcija: k.akcija, izracunano: p ? p.izracunano : null } : null;
+    const telo = { ts: zdaj, hitrost_kmh: svez && f.hitrost_ms != null ? Math.round(f.hitrost_ms * 36) / 10 : 0, lokacija, pot };
+    try { await api("/voznik/heartbeat", { metoda: "POST", telo }); V.zadnjiHeartbeat = Date.now(); } catch (_) { /* naslednji čez 30 s */ }
+  }
+  setInterval(posljiHeartbeat, 30000);
+  setTimeout(posljiHeartbeat, 3000);
+
   function ustaviGps() { if (V.gps != null) navigator.geolocation.clearWatch(V.gps); V.gps = null; $("gumb-gps").classList.remove("vklopljen"); }
   $("gumb-gps").onclick = () => {
     if (V.gps != null) { ustaviGps(); return; }

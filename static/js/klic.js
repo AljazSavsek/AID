@@ -19,9 +19,12 @@
     { polje: "prioriteta", oznaka: "Prioriteta", tip: "prioriteta", obvezno: true, kljucno: true },
     { polje: "potrebna_oprema", oznaka: "Potrebna oprema", tip: "seznam" },
     { polje: "predlagana_enota", oznaka: "Vozilo za odhod", tip: "enota", obvezno: true, kljucno: true },
+    { polje: "dodatne_enote", oznaka: "Dodatne enote (večja nesreča)", tip: "enote", kljucno: true, leSPredlogom: true },
     { polje: "kontakt", oznaka: "Kontakt klicatelja", tip: "besedilo" },
   ];
-  const KLJUCNA = ["prioriteta", "predlagana_enota"];
+  const KLJUCNA = ["prioriteta", "predlagana_enota", "dodatne_enote"];
+  // kartica »Dodatne enote« je vidna le, ko jo AI predlaga ali jo dispečer vnese (večja nesreča)
+  const vidno = (d) => !d.leSPredlogom || predlogiPolja(d.polje).some((p) => p.stanje !== "zastarelo") || S.urejanje[d.polje];
   const VRSTE = { prometna_nesreca: "Prometna nesreča", padec: "Padec", bolecina_v_prsih: "Bolečina v prsih", nezavest: "Nezavest", porod: "Porod", drugo: "Drugo" };
   const PRIORITETE = { 1: "1 – življenjsko ogrožen", 2: "2 – zelo nujno", 3: "3 – nujno", 4: "4 – manj nujno", 5: "5 – ni nujno" };
   const DOGODKI = { okvara_vozila: "Okvara vozila", megla: "Megla", nujna_naloga: "Nujna naloga", manjsa_zmogljivost_centra: "Manjša zmogljivost centra", sprememba_prioritete: "Sprememba prioritete" };
@@ -202,6 +205,7 @@
       case "potrebna_oprema": return Array.isArray(v) ? v.join(", ") : v;
       case "lokacija": return Number(v.lat).toFixed(5) + ", " + Number(v.lon).toFixed(5);
       case "predlagana_enota": { const e = S.enote.find((x) => x.id === v); return e ? `${e.id} · ${e.ime}` : v; }
+      case "dodatne_enote": return (Array.isArray(v) ? v : [v]).map((id) => { const e = S.enote.find((x) => x.id === id); return e ? `${e.id} · ${e.ime}` : id; }).join(", ") || "brez";
       case "zaznani_dogodek_plana": {
         const p = v.parametri || {};
         const deli = [DOGODKI[v.tip] || v.tip];
@@ -231,6 +235,12 @@
       case "stevilo": return `<input id="${id}" type="number" min="0" max="99" value="${v ?? ""}">`;
       case "seznam": return `<input id="${id}" value="${esc(Array.isArray(v) ? v.join(", ") : v || "")}"><span class="namig">Ločite z vejico.</span>`;
       case "lokacija": return `<input id="${id}" value="${v ? Number(v.lat).toFixed(5) + ", " + Number(v.lon).toFixed(5) : ""}" placeholder="46.07138, 14.48870"><span class="namig">Vpišite »lat, lon« ali kliknite na karto zgoraj.</span>`;
+      case "enote": {
+        const glavna = (potrjenZa("predlagana_enota") || odprtiZa("predlagana_enota")[0] || {}).vrednost;
+        const izbrane = Array.isArray(v) ? v : [];
+        return `<div id="${id}" class="izbira-enot">${S.enote.filter((e) => !["okvara", "ni_na_voljo"].includes(e.stanje) && e.id !== glavna).map((e) =>
+          `<label><input type="checkbox" value="${esc(e.id)}" ${izbrane.includes(e.id) ? "checked" : ""}> ${esc(e.id)} · ${esc(e.ime)} <span class="tip-vozila">${e.stanje === "prosto" ? "prosto" : "na nalogi"}</span></label>`).join("")}</div>`;
+      }
       case "enota": return `<select id="${id}">${S.enote.filter((e) => e.stanje !== "okvara").map((e) => `<option value="${e.id}" ${e.id === v ? "selected" : ""}>${e.id} · ${e.ime} (${e.stanje === "prosto" ? "prosto" : "na nalogi"})</option>`).join("")}</select>`;
       default: return def.vec ? `<textarea id="${id}">${esc(v || "")}</textarea>` : `<input id="${id}" value="${esc(v || "")}">`;
     }
@@ -238,6 +248,7 @@
   function preberiUrejevalnik(def) {
     const el = $("ur-" + def.polje);
     if (!el) return undefined;
+    if (def.tip === "enote") return [...el.querySelectorAll("input:checked")].map((x) => x.value);
     const t = el.value.trim();
     if (t === "") return null;
     switch (def.tip) {
@@ -277,6 +288,12 @@
           : `<button class="gumb majhen ${prosto ? "temen" : ""}" data-izberi-enoto="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"}>Izberi</button>`}</td></tr>`;
     }).join("")}</tbody></table>`;
   }
+  function obsegHtml(p) {
+    const d = (p && p.dodatno) || {};
+    const manjka = Object.entries(d.manjka || {}).filter(([, n]) => n > 0).map(([t, n]) => `${n}× ${t}`);
+    return (d.razlog ? `<p class="pojasnilo">⚠ Večja nesreča: ${esc(d.razlog)}.</p>` : "")
+      + (manjka.length ? `<p class="pojasnilo" style="color:var(--rdeca)">Ni dovolj prostih enot – manjka še ${esc(manjka.join(", "))}.</p>` : "");
+  }
   function razlogHtml(p) {
     if (!S.zavracanje[p.id]) return "";
     return `<div class="razlog"><input data-razlog="${p.id}" placeholder="Razlog zavrnitve (neobvezno)"><button class="gumb majhen" data-akcija="potrdi-zavrnitev" data-id="${p.id}">Zavrni</button></div>`;
@@ -304,6 +321,7 @@
       telo = `<div class="vrednost">${esc(fmt(def.polje, potrjen.vrednost))}${prv}</div>${dokaziHtml(potrjen)}
         <div class="potrjeno-info">${potrjen.stanje === "sprejeto" ? "Sprejeto" : potrjen.predlagal === "dispecer" ? "Ročni vnos" : "Spremenjeno"} · ${esc(potrjen.potrdil)} · ${AID.uraZdaj(new Date(potrjen.potrjeno_ob * 1000))}</div>`;
       if (def.tip === "enota") telo += enoteHtml(potrjen);
+      if (def.tip === "enote") telo += obsegHtml(potrjen);
       telo += odprti.map((p) => `<div class="konflikt"><div class="naslovek">⚠ AI zaznal drugačno vrednost · nasprotuje potrjenemu</div>
         <div class="vrednost">${esc(fmt(def.polje, p.vrednost))} ${zaupanjeHtml(p.zaupanje)}</div>${dokaziHtml(p)}
         <div class="k-gumbi"><button class="gumb sprejmi" data-akcija="sprejmi" data-id="${p.id}">Sprejmi novo</button><button class="gumb" data-akcija="zavrni" data-id="${p.id}">Ohrani potrjeno</button></div>${razlogHtml(p)}</div>`).join("");
@@ -318,6 +336,7 @@
         telo = `<div class="vrednost">${esc(fmt(def.polje, p.vrednost))}${(p.zaupanje ?? 1) < 0.5 ? ' <span class="znacka negotovo">negotovo</span>' : ""}</div>${dokaziHtml(p)}`;
       }
       if (def.tip === "enota") telo += enoteHtml(p);
+      if (def.tip === "enote") telo += obsegHtml(p);
       gumbi = `<button class="gumb sprejmi" data-akcija="sprejmi" data-id="${p.id}">Sprejmi <kbd>⏎</kbd></button>
         <button class="gumb" data-akcija="uredi">Uredi <kbd>E</kbd></button>
         <button class="gumb zavrni" data-akcija="zavrni" data-id="${p.id}">Zavrni <kbd>Del</kbd></button>`;
@@ -381,6 +400,7 @@
     vsebnik.querySelectorAll(".kartica").forEach((k) => (obstojece[k.dataset.polje] = k));
     POLJA.forEach((def) => {
       const star = obstojece[def.polje];
+      if (!vidno(def)) { if (star) star.remove(); return; }
       // kartic v urejanju ne prepisujemo – posodobitve AI ne smejo prekiniti dispečerja
       if (star && (S.urejanje[def.polje] || S.urediVse) && star.querySelector(".urejevalnik") && !izrisiVse.prisili) return;
       const tmp = document.createElement("div");
@@ -405,7 +425,7 @@
     izrisiVprasanja();
   };
 
-  const stPotrjenih = () => POLJA.filter((d) => potrjenZa(d.polje)).length;
+  const stPotrjenih = () => POLJA.filter((d) => vidno(d) && potrjenZa(d.polje)).length;
   function kandidatiSprejmiVse() {
     return POLJA.filter((d) => !KLJUCNA.includes(d.polje) && !potrjenZa(d.polje)).map((d) => {
       const od = odprtiZa(d.polje);
@@ -415,8 +435,9 @@
   const manjkajoca = () => POLJA.filter((d) => d.obvezno && !potrjenZa(d.polje));
   function izrisiNapredek() {
     const n = stPotrjenih();
-    $("napredek-besedilo").textContent = `${n} od ${POLJA.length} polj potrjenih`;
-    $("napredek-trak").style.width = (n / POLJA.length) * 100 + "%";
+    const vsa = POLJA.filter(vidno).length;
+    $("napredek-besedilo").textContent = `${n} od ${vsa} polj potrjenih`;
+    $("napredek-trak").style.width = (n / vsa) * 100 + "%";
     const k = kandidatiSprejmiVse();
     $("sprejmi-vse").disabled = !k.length || S.urediVse || !S.klic;
     $("sprejmi-vse").textContent = `Sprejmi vse z zaupanjem ≥ 0,8${k.length ? " (" + k.length + ")" : ""}`;
@@ -586,7 +607,8 @@
     const konflikti = [...S.predlogi.values()].filter((p) => p.nasprotuje_potrjenemu && p.stanje === "predlagano");
     const v = Object.fromEntries(POLJA.map((d) => [d.polje, potrjenZa(d.polje)?.vrednost]).filter(([, x]) => x != null));
     const ok = await AID.modal({
-      naslov: `Odobri in pošlji enoti ${v.predlagana_enota}?`,
+      naslov: v.dodatne_enote && v.dodatne_enote.length ? `Odobri in pošlji ${1 + v.dodatne_enote.length} enot: ${[v.predlagana_enota, ...v.dodatne_enote].join(", ")}?`
+        : `Odobri in pošlji enoti ${v.predlagana_enota}?`,
       html: `<p>Uporabljeni bodo <b>samo potrjeni</b> podatki (${Object.keys(v).length}). Planer pripravi predlog plana, ki ga potrdite v pogledu »Plan in karta«.</p>
         ${nepotrjeni.length ? `<p style="color:var(--rdeca)"><b>Nepotrjeni AI predlogi ne bodo uporabljeni:</b></p><ul>${nepotrjeni.map((d) => `<li>${esc(d.oznaka)}</li>`).join("")}</ul>` : ""}
         ${konflikti.length ? `<p style="color:var(--rdeca)"><b>${konflikti.length} AI opozoril nasprotuje potrjenim podatkom.</b></p>` : ""}
@@ -603,6 +625,7 @@
       S.posiljanje = { naloga_id: r.naloga.id, enota: v.predlagana_enota, plan_id: r.plan_predlog && r.plan_predlog.id, stanje: "predlog" };
       $("obrazec").classList.add("poslano");
       izrisiNapredek();
+      if ((r.dodatne_naloge || []).length) AID.obvestilo("Večja nesreča", `Poslanih ${1 + r.dodatne_naloge.length} enot: ${[v.predlagana_enota, ...r.dodatne_naloge.map((n) => n.dodeljena_enota)].join(", ")}.`);
       if (r.plan_predlog) await potrdiPlanTukaj(r.plan_predlog, r.naloga);
     } catch (e) { napaka(e); izrisiNapredek(); }
     $("odobri").textContent = "ODOBRI IN POŠLJI";

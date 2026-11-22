@@ -1,3 +1,4 @@
+import pytest
 import os
 import sys
 from pathlib import Path
@@ -47,3 +48,10 @@ def prijavi(cl, ime="M. Novak", geslo="test-geslo"):
     r = cl.post("/dispecer/prijava", json={"ime": ime, "geslo": geslo})
     assert r.status_code == 200, r.text
     return r
+
+
+@pytest.fixture(autouse=True)
+def _heartbeat_v_zacasno_mapo(tmp_path_factory, monkeypatch):
+    """Heartbeati iz testov ne smejo v podatki/heartbeat."""
+    if not os.environ.get("AID_HEARTBEAT_MAPA") or "pytest" not in os.environ["AID_HEARTBEAT_MAPA"]:
+        monkeypatch.setenv("AID_HEARTBEAT_MAPA", str(tmp_path_factory.mktemp("heartbeat")))

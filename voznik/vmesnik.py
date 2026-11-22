@@ -85,6 +85,31 @@ class Baterija(BaseModel):
     polni: bool = False
 
 
+class HbLokacija(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    natancnost: float | None = Field(default=None, ge=0, le=100000)
+    smer: float | None = Field(default=None, ge=0, le=360)
+
+
+class HbPot(BaseModel):  # kar naprava ve o svoji poti (strežnik manjkajoče izračuna sam)
+    naloga_id: str | None = Field(default=None, pattern=ID_VZOREC)
+    akcija: str | None = Field(default=None, pattern=r"^(prevzem|dostava)$")
+    izracunano: float | None = None
+    preostalo_m: float | None = Field(default=None, ge=0)
+    preostalo_s: float | None = Field(default=None, ge=0)
+    odmik_m: float | None = Field(default=None, ge=0)
+
+
+class HeartbeatVhod(BaseModel):
+    """Heartbeat naprave vsakih 30 s: hitrost, lokacija in pot."""
+    ts: float | None = None                       # čas na napravi (unix s)
+    hitrost_kmh: float | None = Field(default=None, ge=0, le=400)
+    lokacija: HbLokacija
+    pot: HbPot | None = None
+    baterija: Baterija | None = None
+
+
 class PaketPolozajev(BaseModel):
     enota_id: str | None = Field(default=None, pattern=ID_VZOREC)
     naprava_id: str | None = Field(default=None, pattern=ID_VZOREC)
@@ -177,6 +202,16 @@ def ustvari_usmerjevalnik(C: Callable, preveri_skrbnika: Callable, uporabnik_dep
                             v_zgodovino=False)
         return {"potrjeno_do_seq": izid["potrjeno_do_seq"], "novi": izid["novi"], "podvojeni": izid["podvojeni"],
                 "zavrnjeni": izid["zavrnjeni"], "gps": frek}
+
+    # ---------- heartbeat (vsakih 30 s) ----------
+    omejitev_hb: dict = {}
+
+    @r.post("/voznik/heartbeat")
+    async def heartbeat(h: HeartbeatVhod, v: dict = Depends(voznik)):
+        c = C()
+        if not omejevalnik(omejitev_hb, 12).dovoli(v["enota"]):
+            raise HTTPException(429, "prepogosto pošiljanje")
+        return await c.heartbeati.sprejmi(v["enota_obj"], v["naprava"], h.model_dump(exclude_none=False))
 
     # ---------- naloge in stanja ----------
     @r.get("/voznik/naloga")
