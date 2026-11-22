@@ -40,7 +40,7 @@ def cl():
 
 
 def test_najblizja_po_prometu_ne_po_razdalji(cl):
-    eta = cl.get("/eta", params={"lat": CILJ[0], "lon": CILJ[1], "n": 7}).json()
+    eta = cl.get("/eta", params={"lat": CILJ[0], "lon": CILJ[1], "n": 12}).json()
     rv2 = next(x for x in eta if x["enota_id"] == "RV-2")
     assert eta[0]["enota_id"] != "RV-2" and eta[0]["cas_s"] < rv2["cas_s"]
     assert all(x["kakovost"] in ("natančno", "ocena") for x in eta)

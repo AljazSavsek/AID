@@ -123,9 +123,12 @@ def test_celoten_cikel_prevoza(cl):
 
 
 def test_nujna_voznja_brez_cilja_samo_opravljeno(cl):
+    from conftest import nujna_za_enoto
     c = cl.center
-    plan = c.plan_aktiven()
-    eid, k = next((e, k) for e, ks in plan["koraki_po_enoti"].items() for k in ks[:1] if k["nujna"])
+    eid = next(e["id"] for e in c.enote() if e["tip"] == "motorist")  # motorist pacienta ne pelje
+    nid = nujna_za_enoto(cl, eid)
+    k = next(x for x in c.plan_aktiven()["koraki_po_enoti"][eid] if x["naloga_id"] == nid)
+    assert c.plan_aktiven()["koraki_po_enoti"][eid][0]["naloga_id"] == nid
     H, _ = prijava(cl, eid)
     for st in ("prejeto", "na_poti", "na_prizoriscu"):
         assert stanje(cl, H, st).status_code == 200

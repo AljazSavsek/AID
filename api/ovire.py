@@ -196,7 +196,8 @@ class Ovire:
         """Simulacija: 'zapora' na poslani poti vozila (prometna informacija) ali 'obtical' (vozilo za nesrečo)."""
         nv = self.c.naloge_voznikov
         if not enota_id:
-            kandidati = [e["id"] for e in self.c.enote() if nv.trenutni(e["id"]) and nv.pot(e["id"])]
+            # le vozila, ki res vozijo (pot po cestah; ne tista, ki že stojijo na mestu prevzema)
+            kandidati = [e["id"] for e in self.c.enote() if nv.trenutni(e["id"]) and len((nv.pot(e["id"]) or {}).get("geometrija") or []) >= 4]
             nujni = [eid for eid in kandidati if (nv.trenutni(eid) or {}).get("nujna")]
             enota_id = (nujni or kandidati or [None])[0]
         if not enota_id or not nv.trenutni(enota_id):

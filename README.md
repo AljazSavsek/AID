@@ -25,6 +25,8 @@ Linux/macOS, najhitreje (ustvari `.venv`, namesti vse, tudi Whisper, in zažene)
 ./zazeni.sh
 ```
 
+Začetek nove izmene iz `demo/scenarij.json` (npr. po spremembi enot): `./zazeni.sh --ponastavi`.
+
 Ročno (v vklopljenem `.venv`):
 
 ```bash

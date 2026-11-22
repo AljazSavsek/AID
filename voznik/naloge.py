@@ -479,6 +479,9 @@ class NalogeVoznikov:
                 "sporocila": self.ekipa.za_voznika(enota_id) if self.ekipa else [],
                 "pot": self.pot(enota_id),
                 "obvestila": self.obvestila(enota_id), "zagon": self.objava.zagon, "seq": self.objava.seq,
+                # zadnje obvestilo ne glede na stanje: npr. »naloga predana drugi enoti«, ko enoti ne ostane nobena
+                # naloga (ni kaj potrditi) – naprava, ki je bila takrat brez povezave, ga vseeno vidi
+                "zadnje_obvestilo": self.zadnje_obvestilo(enota_id),
                 "ovire": [{k2: o[k2] for k2 in ("id", "vrsta", "opis", "lat", "lon", "polmer_m")} for o in self.c.ovire.aktivne()
                           if e and zracna_razdalja_m((e["lat"], e["lon"]), (o["lat"], o["lon"])) < 15000]
                 if e and getattr(self.c, "ovire", None) else []}
