@@ -97,7 +97,7 @@
       const r = await AID.api("/poti", { metoda: "POST", telo: { odseki: edinstveni.map(({ od, do: d, tip }) => ({ od, do: d, tip })) } });
       let ponovi = false;
       r.forEach((x, i) => {
-        if (x.kakovost !== "ocena" && x.geometrija && x.geometrija.length > 2) geometrije.set(edinstveni[i].kl, x.geometrija);
+        if (x.kakovost !== "ocena" && x.geometrija && x.geometrija.length >= 2) geometrije.set(edinstveni[i].kl, x.geometrija);
         else ponovi = true; // pot po cestah trenutno ni na voljo – ravna črta ni končna
       });
       if (ponovi) setTimeout(() => { edinstveni.forEach((o) => { if (!geometrije.has(o.kl)) zahtevano.delete(o.kl); }); izrisiKarto(); }, 20000);

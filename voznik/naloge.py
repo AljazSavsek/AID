@@ -374,7 +374,11 @@ class NalogeVoznikov:
             return None
         p = json.loads(r[0]["podatki"])
         k = self.trenutni(enota_id)
-        return p if k and (p["naloga_id"], p["akcija"]) == _kljuc(k) else None
+        if not (k and (p["naloga_id"], p["akcija"]) == _kljuc(k)):
+            return None
+        if p.get("cestna", True) and p.get("kakovost") == "ocena":
+            self._ponovi_pot_kasneje(enota_id)  # npr. po ponovnem zagonu strežnika
+        return p
 
     def _izracunaj_pot_v_ozadju(self, enota_id: str) -> None:
         try:
@@ -405,7 +409,45 @@ class NalogeVoznikov:
         self.db.izvedi("INSERT INTO voznik_pot VALUES (?,?) ON CONFLICT(enota_id) DO UPDATE SET podatki=excluded.podatki",
                        (enota_id, json.dumps(p)))
         self.objava.objavi(enota_id, "pot", {"naloga_id": k["naloga_id"], "akcija": k["akcija"]})
+        if p["cestna"] and p["kakovost"] == "ocena":
+            self._ponovi_pot_kasneje(enota_id)
         return p
+
+    PONOVI_POT_S = 10.0
+
+    def _ponovi_pot_kasneje(self, enota_id: str) -> None:
+        """Pot po cestah ni bila na voljo (npr. ponudnik preobremenjen med računanjem plana) in je shranjena le
+        ravna črta: poskusi znova, dokler ne dobi poti po cestah ali se korak ne spremeni. Brez tega bi vozilo
+        »letelo po zraku« do konca naloge."""
+        if not hasattr(self, "_ponavljanje"):
+            self._ponavljanje = set()
+        if enota_id in self._ponavljanje:
+            return
+        if not any(p.na_voljo() for p in getattr(self.c.usmerjanje, "ponudniki", [])):
+            return  # ponudnik poti ni nastavljen (brez ključev) – ravna ocena je edina možnost
+        try:
+            zanka = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._ponavljanje.add(enota_id)
+
+        async def ponavljaj():
+            try:
+                k = self.trenutni(enota_id)
+                for _ in range(60):  # največ ~10 min
+                    await asyncio.sleep(self.PONOVI_POT_S)
+                    if not k or self.trenutni(enota_id) != k:
+                        return
+                    p = await self.izracunaj_pot(enota_id)  # enota je v _ponavljanje -> nova zanka se ne zažene
+                    if not p or p["kakovost"] != "ocena":
+                        return
+            finally:
+                self._ponavljanje.discard(enota_id)
+        # ne v center._v_ozadju: to je dolgotrajno ponavljanje, na katerega pocakaj_ozadje ne sme čakati
+        t = zanka.create_task(ponavljaj())
+        self._ponovitve = getattr(self, "_ponovitve", set())
+        self._ponovitve.add(t)
+        t.add_done_callback(self._ponovitve.discard)
 
     # ================= pogledi =================
     def za_voznika(self, enota_id: str) -> dict:

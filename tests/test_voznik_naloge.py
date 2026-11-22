@@ -260,3 +260,36 @@ def test_voznik_ne_spreminja_tuje_naloge(cl):
     ob = naloga(cl, Hb)["obvestila"][0]
     assert cl.post("/voznik/potrdi", headers=Ha, json={"obvestilo_id": ob["id"]}).status_code == 404
     assert naloga(cl, Hb)["obvestila"][0]["stanje"] == "caka"
+
+
+def test_ravna_crta_se_sama_zamenja_s_potjo_po_cestah(monkeypatch):
+    """Če je bil ponudnik ob izračunu preobremenjen (429), voznik dobi ravno črto – ta ne sme ostati do konca naloge."""
+    import asyncio
+
+    from usmerjanje.ponudniki import Omejitev, Pot, Ponudnik
+    from usmerjanje.servis import UsmerjevalniServis
+
+    class Preobremenjen(Ponudnik):
+        ime, kakovost = "p", "natančno"
+        ok = False
+
+        async def izracunaj(self, od, do, tip):
+            if not self.ok:
+                raise Omejitev("omejitev hitrosti")
+            return Pot(300, 3000, [list(od), [(od[0] + do[0]) / 2, od[1]], [do[0], (od[1] + do[1]) / 2], list(do)], self.kakovost)
+
+    from voznik.naloge import NalogeVoznikov
+    monkeypatch.setattr(NalogeVoznikov, "PONOVI_POT_S", 0.05)
+    pon = Preobremenjen()
+    c = Center(usmerjanje=UsmerjevalniServis(ponudniki=[pon]), nastavitve_planerja=HITRO,
+               nastavitve_voznika=NastavitveVoznika(skrivnost=b"k" * 32))
+    with TestClient(ustvari_app(c, ozadje=False)) as cl:
+        eid = next(e for e, ks in c.plan_aktiven()["koraki_po_enoti"].items() if ks and e.startswith("MOT")) \
+            if any(ks and e.startswith("MOT") for e, ks in c.plan_aktiven()["koraki_po_enoti"].items()) else enota_s_koraki(c, 1)
+        p = cl.portal.call(lambda: c.naloge_voznikov.izracunaj_pot(eid))
+        assert p["kakovost"] == "ocena" and len(p["geometrija"]) == 2  # ravna črta
+        pon.ok = True  # ponudnik spet odgovarja
+        cl.portal.call(lambda: asyncio.sleep(0.5))
+        p = c.naloge_voznikov.pot(eid)
+        assert p["kakovost"] == "natančno" and len(p["geometrija"]) == 4
+        assert not c.naloge_voznikov._ponavljanje
