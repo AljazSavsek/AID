@@ -19,6 +19,14 @@ Klic → Prepis → AI poslušalec → Predlogi → Dispečer (sprejme / spremen
 
 ## Zagon – vse naenkrat
 
+Linux/macOS, najhitreje (ustvari `.venv`, namesti vse, tudi Whisper, in zažene):
+
+```bash
+./zazeni.sh
+```
+
+Ročno (v vklopljenem `.venv`):
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -87,7 +95,7 @@ pip install -r requirements-zvok.txt
 Prvi zagon prenese model Whisper `small` (~460 MB, potreben internet). Brez faster-whisper ali modela aplikacija
 uporabi zadnji resnični prepis istih posnetkov in to pokaže v »Stanje sistema → Prepis govora«. Zvok ostane na
 strežniku; za predvajanje na tem računalniku nastavite `AID_PREDVAJAJ_ZVOK=1`, model z `AID_WHISPER_MODEL`.
-Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows) ali `python poslusalec/poslusalec.py`.
+Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows) ali `poslusalec/zazeni.sh` (Linux/macOS).
 
 ## Prijava in varnost
 
