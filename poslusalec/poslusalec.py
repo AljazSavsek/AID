@@ -1,141 +1,116 @@
-"""AI poslušalec z rezervo (specifikacija 5, 7).
-
-Vrstni red: LLM v oblaku -> lokalni LLM (Ollama) -> lokalna pravila -> brez predlogov.
-Neveljaven JSON = ponovi enkrat, nato preklopi na naslednjega.
-Ime vira gre le v interni dnevnik; navzven vrnemo samo izhod.
-"""
-from __future__ import annotations
-
 import asyncio
 import json
-import logging
-import os
-
-import httpx
-
-from . import pravila
-from .shema import NAVODILA_POLJ, SHEMA, SISTEMSKI_PROMPT, NeveljavenIzhod, validiraj
-
-dnevnik = logging.getLogger("poslusalec")
+from pathlib import Path
+from uuid import uuid4
 
 
-def sestavi_vhod(segmenti: list[dict], predlogi: list[dict], enote: list[dict], centri: list[dict]) -> str:
-    prepis = "\n".join(f'[{s["id"]} {s["od_s"]:.1f}s {s["govorec"]}] {s["besedilo"]}' for s in segmenti)
-    stanje = [{"polje": p["polje"], "vrednost": p["vrednost"], "stanje": p["stanje"]}
-              for p in predlogi if p["stanje"] in ("predlagano", "sprejeto", "spremenjeno")]
-    return (
-        f"{NAVODILA_POLJ}\n\nPREPIS:\n{prepis}\n\n"
-        f"TRENUTNI PREDLOGI (sprejeto/spremenjeno = potrdil dispečer, ne spreminjaj):\n"
-        f"{json.dumps(stanje, ensure_ascii=False)}\n\n"
-        f"ENOTE: {json.dumps([{'id': e['id'], 'tip': e['tip'], 'ime': e['ime']} for e in enote], ensure_ascii=False)}\n"
-        f"CENTRI: {json.dumps([{'id': c['id'], 'ime': c['ime']} for c in centri], ensure_ascii=False)}"
-    )
+class Prepis:
+    def __init__(self, folder):
+        folder.mkdir(exist_ok=True)
+        self.path = folder / f"klic_{uuid4().hex}.json"
+        self.parts = {}
+        self.version = 0
+        self.changed = asyncio.Condition()
+        self.closed = False
+        self.payload = None
+
+    async def save(self, text):
+        payload = json.dumps({"text": text}, ensure_ascii=False)
+        async with self.changed:
+            if self.payload == payload:
+                return
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(self.path)
+            self.payload = payload
+            self.version += 1
+            self.changed.notify_all()
+
+    async def close(self):
+        async with self.changed:
+            self.closed = True
+            self.changed.notify_all()
+
+    async def stream(self, socket):
+        version = 0
+        while True:
+            async with self.changed:
+                await self.changed.wait_for(lambda: self.version != version or self.closed)
+                if version == self.version:
+                    break
+                version, payload = self.version, self.payload
+            await socket.send_str(payload)
+
+    async def segment(self, oznaka, besedilo):
+        """Model poda celotno trenutno besedilo odseka. Popravek ima isto oznako."""
+        if self.closed:
+            raise RuntimeError("Klic je zaključen.")
+        self.parts[oznaka] = besedilo.strip()
+        await self.save(" ".join(delcek for delcek in self.parts.values() if delcek))
 
 
-class OblakLLM:
-    ime = "oblak"
+async def poslusaj(dogodki, ui, mapa=None):
+    """Za en klic sprejema pare (oznaka, besedilo) in odprto povezavo UI."""
+    klic = Prepis(Path(mapa) if mapa is not None else Path(__file__).with_name("prepisi"))
+    await klic.save("")
+    prenos = asyncio.create_task(klic.stream(ui))
+    try:
+        async for oznaka, besedilo in dogodki:
+            await klic.segment(oznaka, besedilo)
+    finally:
+        await klic.close()
+        await prenos
+    return klic.path
 
-    def __init__(self, model: str | None = None, rok_s: float = 8.0):
-        self.model = model or os.environ.get("AID_LLM_MODEL", "claude-opus-5-5")
-        self.rok_s = rok_s
-        self._odjemalec = None
 
-    def na_voljo(self) -> bool:
-        return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+def prepisi_odsek(model, posnetek):
+    odseki, _ = model.transcribe(str(posnetek), language="sl", beam_size=3,
+                                 condition_on_previous_text=False)
+    return " ".join(s.text.strip() for s in odseki if s.text.strip())
 
-    async def poklici(self, vhod: str) -> str:
-        import anthropic
-        if self._odjemalec is None:
-            self._odjemalec = anthropic.AsyncAnthropic(timeout=self.rok_s, max_retries=0)
-        odg = await self._odjemalec.beta.messages.create(
-            model=self.model,
-            max_tokens=4000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            system=SISTEMSKI_PROMPT,
-            output_config={"effort": os.environ.get("AID_LLM_EFFORT", "low"),
-                           "format": {"type": "json_schema", "schema": SHEMA}},
-            messages=[{"role": "user", "content": vhod}],
+
+async def prepis_klica(model, predvajaj):
+    posnetki = sorted(Path(__file__).with_name("zvok").glob("*.wav"))
+    if not posnetki:
+        raise FileNotFoundError("Manjka mapa zvok s posnetki simulacije.")
+    for posnetek in posnetki:
+        oznaka, vloga = posnetek.stem.split("_")
+        govorec = {"dispecer": "Dispečer", "klicatelj": "Klicatelj"}[vloga]
+        _, besedilo = await asyncio.gather(
+            asyncio.to_thread(predvajaj, posnetek),
+            asyncio.to_thread(prepisi_odsek, model, posnetek),
         )
-        if odg.stop_reason == "refusal":
-            raise NeveljavenIzhod("model je zavrnil zahtevo")
-        if odg.stop_reason == "max_tokens":
-            raise NeveljavenIzhod("izhod prekinjen")
-        return next(b.text for b in odg.content if b.type == "text")
+        if besedilo:
+            yield oznaka, f"{govorec}: {besedilo}"
+        else:
+            print(f"Odsek {oznaka}: model ni razbral govora.", flush=True)
 
 
-class OllamaLLM:
-    ime = "lokalni_llm"
-
-    def __init__(self, rok_s: float = 12.0):
-        self.url = os.environ.get("OLLAMA_URL", "")
-        self.model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
-        self.rok_s = rok_s
-
-    def na_voljo(self) -> bool:
-        return bool(self.url)
-
-    async def poklici(self, vhod: str) -> str:
-        async with httpx.AsyncClient(timeout=self.rok_s) as c:
-            r = await c.post(f"{self.url.rstrip('/')}/api/chat", json={
-                "model": self.model, "stream": False, "format": SHEMA, "options": {"temperature": 0},
-                "messages": [{"role": "system", "content": SISTEMSKI_PROMPT}, {"role": "user", "content": vhod}],
-            })
-            r.raise_for_status()
-            return r.json()["message"]["content"]
+def predvajaj_windows(posnetek):
+    import winsound
+    winsound.PlaySound(str(posnetek), winsound.SND_FILENAME | winsound.SND_NODEFAULT)
 
 
-class Pravila:
-    """Deterministična rezerva; namesto besedila prejme segmente neposredno."""
-    ime = "pravila"
+class Konzola:
+    def __init__(self):
+        self.prejsnji = ""
 
-    def na_voljo(self) -> bool:
-        return os.environ.get("AID_PRAVILA", "1") == "1"
+    async def send_str(self, payload):
+        prepis = json.loads(payload)["text"]
+        nov_del = prepis.removeprefix(self.prejsnji).strip()
+        if nov_del:
+            print(nov_del, flush=True)
+        self.prejsnji = prepis
 
 
-class Poslusalec:
-    def __init__(self, viri: list | None = None):
-        self.viri = viri if viri is not None else [OblakLLM(), OllamaLLM(), Pravila()]
-        self.zadnji_vir: str | None = None  # samo za interno zdravje
-        self.simuliran_izpad = False         # demo: izpad vseh virov
-        self.napake: dict[str, str] = {}     # zadnja napaka po viru (interno zdravje)
-        self.rezerva = False                 # True, ko je nastavljen boljši vir odpovedal in dela rezerva
+async def zagon():
+    from faster_whisper import WhisperModel
+    print("Nalagam Whisper small. Ob prvem zagonu se model prenese. Prosim, počakaj.", flush=True)
+    model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=4)
+    print("Začetek simuliranega klica.", flush=True)
+    pot = await poslusaj(prepis_klica(model, predvajaj_windows), Konzola())
+    print("Konec klica. Prepis je shranjen v", pot)
 
-    async def obdelaj(self, segmenti: list[dict], predlogi: list[dict], enote: list[dict], centri: list[dict]) -> dict | None:
-        """Vrne očiščen izhod ali None (brez predlogov -> ročni vnos)."""
-        if not segmenti or self.simuliran_izpad:
-            return None
-        vhod = sestavi_vhod(segmenti, predlogi, enote, centri)
-        odpovedali = []
-        for vir in self.viri:
-            if not vir.na_voljo():
-                continue
-            if isinstance(vir, Pravila):
-                trenutni = {p["polje"]: p["vrednost"] for p in predlogi if p["stanje"] in ("predlagano", "sprejeto", "spremenjeno")}
-                self.zadnji_vir = vir.ime
-                self.rezerva = bool(odpovedali)
-                return validiraj(pravila.izlusci(segmenti, trenutni), segmenti)
-            for poskus in (1, 2):  # neveljaven JSON -> ponovi enkrat
-                try:
-                    besedilo = await vir.poklici(vhod)
-                    izhod = validiraj(json.loads(besedilo), segmenti)
-                    self.zadnji_vir = vir.ime
-                    self.rezerva = bool(odpovedali)
-                    self.napake.pop(vir.ime, None)
-                    return izhod
-                except (json.JSONDecodeError, NeveljavenIzhod) as e:
-                    dnevnik.warning("%s: neveljaven izhod (poskus %d): %s", vir.ime, poskus, e)
-                    self.napake[vir.ime] = f"neveljaven izhod: {e}"[:300]
-                except (asyncio.TimeoutError, httpx.HTTPError) as e:
-                    dnevnik.warning("%s: ni dosegljiv: %s", vir.ime, e)
-                    self.napake[vir.ime] = f"ni dosegljiv: {e}"[:300]
-                    break
-                except Exception as e:  # noqa: BLE001 – napake SDK (napačna različica, ključ, model …) niso tihe
-                    dnevnik.error("%s: napaka: %r", vir.ime, e)
-                    self.napake[vir.ime] = f"napaka: {e!r}"[:300]
-                    break
-            odpovedali.append(vir.ime)
-        self.zadnji_vir = None
-        self.rezerva = bool(odpovedali)
-        dnevnik.error("AI poslušalec ni na voljo – brez predlogov (ročni vnos)")
-        return None
+
+if __name__ == "__main__":
+    asyncio.run(zagon())
