@@ -68,6 +68,7 @@ def testni_posnetki(tmp_path_factory, monkeypatch):
         napravi_posnetek(mapa / ime, 3.0 + (i % 4))
     (mapa / "Vir.txt").write_text("vir posnetkov", encoding="utf-8")
     monkeypatch.setenv("AID_ZVOK_MAPA", str(mapa))
+    monkeypatch.setenv("AID_ZVOK_VIR", "whisper")  # privzeto testiramo Whisper; demo ima svoje teste
     return mapa
 
 
@@ -85,13 +86,12 @@ def cl(tmp_path, monkeypatch):
         yield k
 
 
-def test_v_aplikaciji_ni_vnaprej_dolocenega_besedila():
+def test_besedilni_demo_klic_ne_obstaja_vec():
     koren = Path(__file__).parent.parent
-    assert not hasattr(pp, "ShranjenPrepis")
     assert not (koren / "demo" / "klic1.json").exists() and not (koren / "zajem" / "simulator.py").exists()
-    for f in list((koren / "api").glob("*.py")) + list((koren / "zajem").glob("*.py")) + [koren / "static" / "js" / "klic.js"]:
+    for f in list((koren / "api").glob("*.py")) + [koren / "static" / "js" / "klic.js"]:
         t = f.read_text(encoding="utf-8")
-        assert "klic1" not in t and "/demo/klic\"" not in t and "prepisi/klic_" not in t, f
+        assert "klic1" not in t and "/demo/klic\"" not in t, f
 
 
 def test_besedilo_je_odvisno_od_zvoka(tmp_path):
@@ -201,3 +201,51 @@ def test_model_se_ne_nalozi_klic_odprt_za_rocni_zapis(cl, monkeypatch):
     assert cl.post("/demo/klic-zvok", json={"hitrost": 1000}).status_code == 503  # ne poskuša takoj znova
     dog = [d["podatki"] for d in cl.get("/stanje", params={"od": 0}).json()["dogodki"] if d["tip"] == "prepis_stanje"]
     assert dog[-1]["stanje"] == "napaka"
+
+
+# ---------------- demo: zvok se predvaja, besedilo je vnaprej določeno ----------------
+def test_demo_iz_prepis_json_brez_whisperja(cl, testni_posnetki, monkeypatch):
+    monkeypatch.setenv("AID_ZVOK_VIR", "samodejno")
+    besedila = {ime: f"Besedilo {ime}" for ime in ODGOVORI}
+    (testni_posnetki / "prepis.json").write_text(json.dumps({"_opomba": "test", **besedila}), encoding="utf-8")
+    monkeypatch.setattr(pp, "nalozi_model", lambda ime=None: (_ for _ in ()).throw(AssertionError("Whisper se ne sme naložiti")))
+    monkeypatch.setattr(zvok, "whisper_na_voljo", lambda: False)  # tudi brez faster-whisper
+    assert zvok.nacin() == "demo" and cl.get("/prepis/stanje").json()["stanje"] == "demo"
+    k = cl.post("/demo/klic-zvok", json={"hitrost": 1000}).json()
+    cl.portal.call(cl.center.pocakaj_ozadje)
+    seg = cl.get(f"/klic/{k['id']}").json()["segmenti"]
+    assert [s["besedilo"] for s in seg] == [besedila[i] for i in sorted(besedila)]
+    dog = cl.get("/stanje", params={"od": 0}).json()["dogodki"]
+    zv = [d["podatki"] for d in dog if d["tip"] == "zvok_odsek"]
+    assert len(zv) == 18 and all(z["vir"] == "demo" for z in zv)  # zvok se predvaja kot prej
+    assert [d["podatki"]["stanje"] for d in dog if d["tip"] == "prepis_stanje"] == ["v_zivo", "konec"]
+
+
+def test_demo_iz_zadnjega_shranjenega_prepisa(tmp_path, testni_posnetki, monkeypatch):
+    monkeypatch.setenv("AID_ZVOK_VIR", "samodejno")
+    mapa = tmp_path / "prepisi"
+    mapa.mkdir()
+    monkeypatch.setenv("AID_PREPISI_MAPA", str(mapa))
+    assert zvok.nacin() == "whisper"  # brez besedila: Whisper
+    imena = sorted(ODGOVORI)
+    tekst = " ".join(f"{'Dispečer' if '_dispecer' in i else 'Klicatelj'}: stavek {i}." for i in imena)
+    (mapa / "klic_a.json").write_text(json.dumps({"text": tekst}), encoding="utf-8")
+    (mapa / "klic_b.json").write_text(json.dumps({"text": "Dispečer: drug klic."}), encoding="utf-8")  # se ne ujema
+    besedila, vir = zvok.besedilo_demo()
+    assert vir == "klic_a.json" and besedila[imena[1]] == f"stavek {imena[1]}." and zvok.nacin() == "demo"
+    monkeypatch.setenv("AID_ZVOK_VIR", "whisper")
+    assert zvok.nacin() == "whisper"  # izrecno Whisper
+
+
+def test_zamrzni_prepis(tmp_path, testni_posnetki, monkeypatch):
+    from zajem import zamrzni_prepis
+    mapa = tmp_path / "prepisi"
+    mapa.mkdir()
+    monkeypatch.setenv("AID_PREPISI_MAPA", str(mapa))
+    imena = sorted(ODGOVORI)
+    tekst = " ".join(f"{'Dispečer' if '_dispecer' in i else 'Klicatelj'}: {i}" for i in imena)
+    (mapa / "klic_x.json").write_text(json.dumps({"text": tekst}), encoding="utf-8")
+    assert zamrzni_prepis.main([]) == 0
+    p = json.loads((testni_posnetki / "prepis.json").read_text(encoding="utf-8"))
+    assert p[imena[0]] == imena[0] and "_opomba" in p
+    assert zamrzni_prepis.main([]) == 1  # ne prepiše brez --prepisi

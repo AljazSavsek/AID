@@ -802,7 +802,7 @@
   AID.na("klic", (k) => { if (S.klic && k.id === S.klic.id) { Object.assign(S.klic, k); izrisiTelefon(); } else AID.api("/cakajoci").then((c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); }).catch(() => {}); });
   AID.na("enote", (e) => { S.enote = e; izrisiVse(); });
   AID.na("ai_stanje", (v) => nastaviAi(v.na_voljo));
-  const OPIS_MODELA = { ni_zagnan: "—", nalagam: "nalagam Whisper …", pripravljen: "Whisper pripravljen", napaka: "ni na voljo", ni_namescen: "Whisper ni nameščen" };
+  const OPIS_MODELA = { demo: "pripravljen", ni_zagnan: "—", nalagam: "nalagam Whisper …", pripravljen: "Whisper pripravljen", napaka: "ni na voljo", ni_namescen: "Whisper ni nameščen" };
   function nastaviModel(m) {
     const el = $("st-prepis");
     if (!m || (S.klic && S.klic.stanje === "v_teku" && S.prepisVZivo)) return;
@@ -835,7 +835,7 @@
   }
   function predvajajOdsek(o) {
     if (!S.klic || o.klic_id !== S.klic.id) return zaKasneje("zvok", o);
-    $("st-prepis").textContent = `v živo (Whisper) ${o.st}/${o.skupaj}`;
+    $("st-prepis").textContent = o.vir === "demo" ? `v živo ${o.st}/${o.skupaj}` : `v živo (Whisper) ${o.st}/${o.skupaj}`;
     vrstaZvoka.push(o);
     naslednjiZvok();
   }
@@ -847,8 +847,9 @@
     if (!S.klic || p.klic_id !== S.klic.id) return zaKasneje("stanje", p);
     const el = $("st-prepis");
     S.prepisVZivo = p.stanje === "v_zivo";
-    el.textContent = p.stanje === "nalagam" ? "nalagam Whisper …" : p.stanje === "konec" ? "končan (Whisper)"
-      : p.stanje === "napaka" ? "ni na voljo – ročni zapis" : "v živo (Whisper)";
+    const w = p.vir === "demo" ? "" : " (Whisper)";
+    el.textContent = p.stanje === "nalagam" ? "nalagam Whisper …" : p.stanje === "konec" ? "končan" + w
+      : p.stanje === "napaka" ? "ni na voljo – ročni zapis" : "v živo" + w;
     el.className = "pika" + (p.stanje === "napaka" ? " napaka" : "");
     if (p.stanje === "konec" || p.stanje === "napaka") { S.prepisVZivo = false; if (p.stanje === "napaka") AID.ustaviZvok(); }
     if (p.stanje !== "konec") AID.obvestilo("Prepis govora", p.sporocilo, p.stanje === "napaka", 6000);
