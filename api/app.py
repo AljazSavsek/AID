@@ -572,7 +572,7 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         try:
             pp.posnetki_klica()
         except FileNotFoundError:
-            raise HTTPException(503, "Manjkajo posnetki klica (poslusalec/zvok/*.wav).")
+            raise HTTPException(503, "Manjkajo posnetki klica (poslusalec/zvok).")
         if not zvok.whisper_na_voljo():
             raise HTTPException(503, zvok.razlog_ni_whisperja())
         if zvok.MODEL["stanje"] == "napaka" and not zvok.lahko_poskusi_znova():
@@ -602,7 +602,9 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         pot = next((p for p in pp.posnetki_klica() if p.name == posnetek), None)
         if pot is None:
             raise HTTPException(404, "ni posnetka")
-        return FileResponse(pot, media_type="audio/wav", headers={"Cache-Control": "private, max-age=600"})
+        import mimetypes
+        vrsta = {".wav": "audio/wav", ".opus": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4"}.get(pot.suffix.lower()) or mimetypes.guess_type(pot.name)[0] or "audio/wav"
+        return FileResponse(pot, media_type=vrsta, headers={"Cache-Control": "private, max-age=600"})
 
     @app.get("/prepis/stanje")
     async def prepis_stanje():

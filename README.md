@@ -84,13 +84,17 @@ python -m pytest -q tests
 
 ## Zvočni klic (prepis govora)
 
-V čakalni vrsti je klic **»Zagorje ob Savi«** (oznaka »zvok«). Ko ga dispečer sprejme (klik na klic), strežnik
+V čakalni vrsti je **»Zvočni klic«** (oznaka »zvok«). Ko ga dispečer sprejme (klik na klic), strežnik
 prepisuje posnetke iz `poslusalec/zvok/` s faster-whisper, odsek za odsekom v realnem času; vsak odsek se pojavi v
 prepisu, AI poslušalec iz njega pripravi predloge.
 
 ```bash
 pip install -r requirements-zvok.txt
 ```
+
+Posnetke lahko kadarkoli zamenjate (ponovni zagon ni potreben): poljubno število datotek `NN_dispecer.wav` /
+`NN_klicatelj.wav` (tudi `.mp3`, `.m4a`, `.ogg`, `.flac`), ali en posnetek celega klica brez vloge v imenu – ta se
+razdeli na Whisperjeve odseke (govorec »klicatelj«, dispečer lahko popravi). Druga mapa: `AID_ZVOK_MAPA`.
 
 Besedilo klica prihaja **samo iz Whisperja** – v aplikaciji ni vnaprej določenega besedila. Strežnik naloži model ob
 zagonu (prvič ga prenese, `small` ~460 MB, potreben internet); stanje je v »Stanje sistema → Prepis govora«. Če Whisper
