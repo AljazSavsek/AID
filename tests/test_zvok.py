@@ -80,6 +80,8 @@ def cist_model(monkeypatch):
 @pytest.fixture()
 def cl(tmp_path, monkeypatch):
     monkeypatch.setenv("AID_PREPISI_MAPA", str(tmp_path / "prepisi"))
+    # zvočni pogovor v čakalni vrsti (v demo/klici.json ga trenutno ni; posnetki in koda ostajajo)
+    monkeypatch.setenv("AID_DEMO_KLICI", str(Path(__file__).parent / "podatki" / "klic_zvok.json"))
     c = Center(nastavitve_planerja=Nastavitve(casovna_omejitev_s=0.3, alternative=False))
     with TestClient(ustvari_app(c, ozadje=False)) as k:
         k.center = c

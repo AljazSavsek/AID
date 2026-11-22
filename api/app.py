@@ -337,7 +337,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         if ozadje:
             from zajem import zvok
             zvok.objava = c.objava
-            zvok.prednalozi()  # Whisper se naloži ob zagonu strežnika, ne šele ob prvem klicu
+            if any(k.get("posnetki") for k in c.demo_klici) or not c.demo_klici:
+                zvok.prednalozi()  # Whisper se naloži ob zagonu strežnika, ne šele ob prvem klicu (le, če je zvočni klic)
             stanje["naloge"] = [asyncio.ensure_future(c.usmerjanje.zanka_zdravja(30)),
                                 asyncio.ensure_future(_izvoz(c)),
                                 asyncio.ensure_future(_signal(c)),
