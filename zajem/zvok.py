@@ -12,6 +12,7 @@ import asyncio
 import importlib.util
 import logging
 import os
+import sys
 from pathlib import Path
 
 from poslusalec import poslusalec as pp
@@ -27,7 +28,7 @@ def whisper_na_voljo() -> bool:
     return importlib.util.find_spec("faster_whisper") is not None
 
 
-_neuspeh = {"cas": 0.0}
+_neuspeh = {"cas": 0.0, "razlog": ""}
 
 
 async def pripravi_model():
@@ -39,7 +40,13 @@ async def pripravi_model():
             return await asyncio.to_thread(pp.nalozi_model), "whisper"
         except Exception as e:  # noqa: BLE001 – brez interneta ob prvem zagonu, poškodovan model …
             _neuspeh["cas"] = time.time()
+            _neuspeh["razlog"] = f"model se ni naložil ({type(e).__name__}: {str(e)[:160]})"
             dnevnik.warning("Whisper ni na voljo: %s", e)
+    if os.environ.get("AID_ZVOK_REZERVA") == "1":
+        _neuspeh["razlog"] = "AID_ZVOK_REZERVA=1"
+    elif not whisper_na_voljo():
+        _neuspeh["razlog"] = f"faster-whisper ni nameščen v Pythonu {sys.executable} (aktivirajte .venv in pip install -r requirements-zvok.txt)"
+    dnevnik.warning("Prepis govora: rezerva – %s", _neuspeh["razlog"])
     try:
         return pp.ShranjenPrepis(), "shranjen"
     except FileNotFoundError as e:
@@ -56,7 +63,8 @@ async def predvajaj_zvocni_klic(center, klic_id: str, hitrost: float = 1.0, prek
         vir = "whisper"
     center.objava.objavi("prepis_stanje", {"klic_id": klic_id, "stanje": "v_zivo", "vir": vir,
                                            "sporocilo": "Prepis govora v živo." if vir == "whisper"
-                                           else "Whisper ni na voljo – uporabljen zadnji shranjen prepis teh posnetkov."})
+                                           else "Whisper ni na voljo – uporabljen zadnji shranjen prepis teh posnetkov. Razlog: "
+                                           + (_neuspeh["razlog"] or "neznan")})
     mapa = Path(os.environ.get("AID_PREPISI_MAPA") or pp.MAPA / "prepisi")
     zapis = pp.Prepis(mapa) if vir == "whisper" else None  # kot samostojni poslušalec
     predvajaj = pp.predvajaj_lokalno if os.environ.get("AID_PREDVAJAJ_ZVOK") == "1" else None
