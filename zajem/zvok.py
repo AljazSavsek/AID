@@ -21,6 +21,7 @@ from poslusalec import poslusalec as pp
 
 dnevnik = logging.getLogger("prepis")
 PONOVNI_POSKUS_S = 60
+PAVZA_S = float(os.environ.get("AID_ZVOK_PAVZA_S", "0.6"))  # premor med posnetki (odgovor sogovornika)
 
 # stanje modela (en model na proces): ni_zagnan | nalagam | pripravljen | napaka
 MODEL: dict = {"stanje": "ni_zagnan", "razlog": "", "cas_napake": 0.0, "model": None, "naloga": None, "preneseno_mb": 0}
@@ -172,9 +173,11 @@ async def predvajaj_zvocni_klic(center, klic_id: str, hitrost: float = 1.0, prek
                 center.dodaj_segment(klic_id, v, besedilo, cas + od, cas + do)
                 n += 1
                 await zapis.segment(f"{oznaka}-{n}", f"{pp.GOVORCI[v]}: {besedilo}")
-            if not predvajaj:
-                await asyncio.sleep(max(0.0, zacetek + (cas + trajanje) / hitrost - zanka.time()))
             cas += trajanje
+            if i < len(posnetki) and vloga:  # kratek premor med govorcema, kot v pravem pogovoru
+                cas += PAVZA_S
+            if not predvajaj:  # naslednji posnetek šele, ko se ta izteče (+ premor)
+                await asyncio.sleep(max(0.0, zacetek + cas / hitrost - zanka.time()))
     finally:
         await zapis.close()
     center.objava.objavi("prepis_stanje", {"klic_id": klic_id, "stanje": "konec", "vir": "whisper",

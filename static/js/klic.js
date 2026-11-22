@@ -763,19 +763,28 @@
   AID.ponoviZgodnje = (klicId) => zgodnji.splice(0).filter((x) => x.p.klic_id === klicId && Date.now() - x.t < 15000)
     .forEach((x) => (x.tip === "zvok" ? predvajajOdsek : prepisStanje)(x.p));
 
+  // posnetki se predvajajo eden za drugim, vsak do konca (nikoli ne prekinemo prejšnjega)
   let zvok = null;
+  const vrstaZvoka = [];
+  function naslednjiZvok() {
+    if (zvok || !vrstaZvoka.length) return;
+    const o = vrstaZvoka.shift();
+    if (!S.klic || o.klic_id !== S.klic.id || $("tel-utisaj").classList.contains("vklopljen")) return naslednjiZvok();
+    zvok = new Audio(`/klic/${encodeURIComponent(o.klic_id)}/zvok/${encodeURIComponent(o.posnetek)}`);
+    zvok.playbackRate = o.hitrost > 1 ? Math.min(4, o.hitrost) : 1;
+    const konec = () => { zvok = null; naslednjiZvok(); };
+    zvok.onended = konec; zvok.onerror = konec;
+    zvok.play().catch((e) => { AID.obvestilo("Zvok klica", "Brskalnik ni dovolil predvajanja: " + e.message, true, 5000); konec(); });
+  }
   function predvajajOdsek(o) {
     if (!S.klic || o.klic_id !== S.klic.id) return zaKasneje("zvok", o);
     $("st-prepis").textContent = `v živo (Whisper) ${o.st}/${o.skupaj}`;
-    if ($("tel-utisaj").classList.contains("vklopljen")) return;  // dispečer je utišal klic
-    if (zvok) zvok.pause();
-    zvok = new Audio(`/klic/${encodeURIComponent(o.klic_id)}/zvok/${encodeURIComponent(o.posnetek)}`);
-    zvok.playbackRate = Math.min(4, o.hitrost || 1);
-    zvok.play().catch((e) => AID.obvestilo("Zvok klica", "Brskalnik ni dovolil predvajanja: " + e.message, true, 5000));
+    vrstaZvoka.push(o);
+    naslednjiZvok();
   }
   AID.na("zvok_odsek", predvajajOdsek);
-  AID.ustaviZvok = () => { if (zvok) zvok.pause(); };
-  $("tel-utisaj").addEventListener("click", () => { if (zvok && $("tel-utisaj").classList.contains("vklopljen")) zvok.pause(); });
+  AID.ustaviZvok = () => { vrstaZvoka.length = 0; if (zvok) { zvok.onended = null; zvok.pause(); zvok = null; } };
+  $("tel-utisaj").addEventListener("click", () => { if ($("tel-utisaj").classList.contains("vklopljen")) AID.ustaviZvok(); });
 
   function prepisStanje(p) {
     if (!S.klic || p.klic_id !== S.klic.id) return zaKasneje("stanje", p);
@@ -784,7 +793,7 @@
     el.textContent = p.stanje === "nalagam" ? "nalagam Whisper …" : p.stanje === "konec" ? "končan (Whisper)"
       : p.stanje === "napaka" ? "ni na voljo – ročni zapis" : "v živo (Whisper)";
     el.className = "pika" + (p.stanje === "napaka" ? " napaka" : "");
-    if (p.stanje === "konec" || p.stanje === "napaka") { S.prepisVZivo = false; if (zvok && p.stanje === "napaka") zvok.pause(); }
+    if (p.stanje === "konec" || p.stanje === "napaka") { S.prepisVZivo = false; if (p.stanje === "napaka") AID.ustaviZvok(); }
     if (p.stanje !== "konec") AID.obvestilo("Prepis govora", p.sporocilo, p.stanje === "napaka", 6000);
   }
   AID.na("prepis_stanje", prepisStanje);
