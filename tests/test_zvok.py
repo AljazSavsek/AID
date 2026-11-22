@@ -109,6 +109,13 @@ def test_endpoint_zvocni_klic_z_whisperjem(cl, monkeypatch):
     st = [d["podatki"] for d in cl.get("/stanje", params={"od": 0}).json()["dogodki"] if d["tip"] == "prepis_stanje"]
     assert [x["stanje"] for x in st] == ["nalagam", "v_zivo", "konec"] and all(x.get("vir", "whisper") == "whisper" for x in st)
     assert cl.get("/prepis/stanje").json()["stanje"] == "pripravljen"
+    # brskalnik dispečerja dobi vsak posnetek ob začetku odseka in ga predvaja
+    zv = [d["podatki"] for d in cl.get("/stanje", params={"od": 0}).json()["dogodki"] if d["tip"] == "zvok_odsek"]
+    assert [z["st"] for z in zv] == list(range(1, 19)) and zv[1]["posnetek"] == "02_klicatelj.wav" and zv[0]["skupaj"] == 18
+    r = cl.get(f"/klic/{k['id']}/zvok/02_klicatelj.wav")
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content[:4] == b"RIFF"
+    assert cl.get(f"/klic/{k['id']}/zvok/..%2F..%2Fdemo%2Fscenarij.json").status_code == 404
+    assert cl.get("/klic/ne-obstaja/zvok/02_klicatelj.wav").status_code == 404
 
 
 def test_brez_whisperja_ni_besedila_le_rocni_zapis(cl, monkeypatch):

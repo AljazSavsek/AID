@@ -593,6 +593,17 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         c._v_ozadju(tek())
         return k
 
+    @app.get("/klic/{klic_id}/zvok/{posnetek}")
+    async def zvok_klica(klic_id: str, posnetek: str):
+        """Posnetek zvočnega klica za brskalnik dispečerja (le prijavljen dispečer, le posnetki iz poslusalec/zvok)."""
+        from poslusalec import poslusalec as pp
+        if not (C().db.beri("klic", klic_id) or {}).get("id"):
+            raise HTTPException(404, "ni klica")
+        pot = next((p for p in pp.posnetki_klica() if p.name == posnetek), None)
+        if pot is None:
+            raise HTTPException(404, "ni posnetka")
+        return FileResponse(pot, media_type="audio/wav", headers={"Cache-Control": "private, max-age=600"})
+
     @app.get("/prepis/stanje")
     async def prepis_stanje():
         from zajem import zvok

@@ -23,7 +23,7 @@ dnevnik = logging.getLogger("prepis")
 PONOVNI_POSKUS_S = 60
 
 # stanje modela (en model na proces): ni_zagnan | nalagam | pripravljen | napaka
-MODEL: dict = {"stanje": "ni_zagnan", "razlog": "", "cas_napake": 0.0, "model": None, "naloga": None}
+MODEL: dict = {"stanje": "ni_zagnan", "razlog": "", "cas_napake": 0.0, "model": None, "naloga": None, "preneseno_mb": 0}
 objava = None  # Objava centra (nastavi app ob zagonu) – za sporočilo »prepis_model« v vmesnik
 
 
@@ -50,7 +50,7 @@ def ime_modela() -> str:
 
 def stanje_modela() -> dict:
     st = MODEL["stanje"] if whisper_na_voljo() else "ni_namescen"
-    return {"stanje": st, "model": ime_modela(), "razlog": MODEL["razlog"] if st == "napaka" else
+    return {"stanje": st, "model": ime_modela(), "preneseno_mb": MODEL.get("preneseno_mb", 0), "razlog": MODEL["razlog"] if st == "napaka" else
             (razlog_ni_whisperja() if st == "ni_namescen" else "")}
 
 
@@ -59,18 +59,47 @@ def _objavi_stanje():
         objava.objavi("prepis_model", stanje_modela())
 
 
+def _mapa_modela() -> Path:
+    hf = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub"
+    return hf / f"models--Systran--faster-whisper-{ime_modela()}"
+
+
+def _velikost_mb(mapa: Path) -> int:
+    try:
+        return int(sum(f.stat().st_size for f in mapa.rglob("*") if f.is_file() and not f.is_symlink()) / 1e6)
+    except OSError:
+        return 0
+
+
+async def _spremljaj_prenos():
+    """Med nalaganjem vsaki 2 s objavi, koliko MB modela je že prenesenega (prvi zagon: ~480 MB)."""
+    prej = -1
+    while MODEL["stanje"] == "nalagam":
+        mb = _velikost_mb(_mapa_modela())
+        if mb != prej:
+            MODEL["preneseno_mb"] = mb
+            _objavi_stanje()
+            if mb > prej + 50 or prej < 0:
+                print(f"[prepis] Whisper {ime_modela()}: preneseno {mb} MB …", flush=True)
+            prej = mb
+        await asyncio.sleep(2)
+
+
 async def _nalozi():
-    MODEL.update(stanje="nalagam", razlog="")
+    MODEL.update(stanje="nalagam", razlog="", preneseno_mb=0)
     _objavi_stanje()
-    dnevnik.info("Nalagam Whisper '%s' (prvič se model prenese) …", ime_modela())
+    print(f"[prepis] Nalagam Whisper '{ime_modela()}' (prvi zagon prenese ~480 MB s huggingface.co) …", flush=True)
+    spremljanje = asyncio.ensure_future(_spremljaj_prenos())
     try:
         MODEL["model"] = await asyncio.to_thread(pp.nalozi_model)
+        print(f"[prepis] Whisper '{ime_modela()}' pripravljen.", flush=True)
         MODEL.update(stanje="pripravljen")
         dnevnik.info("Whisper '%s' pripravljen.", ime_modela())
     except Exception as e:  # noqa: BLE001 – brez interneta ob prvem zagonu, poškodovan model …
         MODEL.update(stanje="napaka", cas_napake=time.time(), razlog=f"model se ni naložil ({type(e).__name__}: {str(e)[:200]})")
         dnevnik.error("Whisper ni na voljo: %s", MODEL["razlog"])
     finally:
+        spremljanje.cancel()
         _objavi_stanje()
 
 
@@ -107,23 +136,37 @@ async def predvajaj_zvocni_klic(center, klic_id: str, hitrost: float = 1.0, prek
                                            "sporocilo": f"Prepis govora v živo (Whisper {ime_modela()})."})
     mapa = Path(os.environ.get("AID_PREPISI_MAPA") or pp.MAPA / "prepisi")
     zapis = pp.Prepis(mapa)  # prepis se shrani kot pri samostojnem poslušalcu
-    predvajaj = pp.predvajaj_lokalno if os.environ.get("AID_PREDVAJAJ_ZVOK") == "1" else None
+    predvajaj = pp.predvajaj_lokalno if os.environ.get("AID_PREDVAJAJ_ZVOK") == "1" else None  # še na strežniku
+    posnetki = [p for p in pp.posnetki_klica() if p.stem.split("_", 1)[-1] in pp.GOVORCI]
+    hitrost = max(0.25, hitrost)
     cas, n = 0.0, 0
     zanka = asyncio.get_running_loop()
     zacetek = zanka.time()
     try:
-        async for o in pp.odseki_klica(model, predvajaj):
-            if not predvajaj:  # realen čas klica (pospešen s hitrostjo): odsek je »izrečen« šele ob svojem koncu
-                await asyncio.sleep(max(0.0, zacetek + (cas + o["trajanje_s"]) / max(0.25, hitrost) - zanka.time()))
+        for i, posnetek in enumerate(posnetki, 1):
             if prekini and prekini():
                 break
-            od, cas = cas, cas + o["trajanje_s"]
-            if not o["besedilo"]:
-                dnevnik.info("odsek %s: Whisper ni razbral govora", o["oznaka"])
+            oznaka, vloga = posnetek.stem.split("_", 1)
+            trajanje = pp.trajanje_s(posnetek)
+            # brskalnik dispečerja predvaja posnetek (kot da posluša klic), Whisper ga hkrati prepisuje
+            center.objava.objavi("zvok_odsek", {"klic_id": klic_id, "posnetek": posnetek.name, "st": i, "skupaj": len(posnetki),
+                                                "vloga": vloga, "trajanje_s": round(trajanje, 2), "hitrost": hitrost})
+            opravila = [asyncio.to_thread(pp.prepisi_odsek, model, posnetek)]
+            if predvajaj:
+                opravila.append(asyncio.to_thread(predvajaj, posnetek))
+            besedilo = (await asyncio.gather(*opravila))[0]
+            if not predvajaj:  # odsek je »izrečen« šele ob svojem koncu (realni čas, pospešen s hitrostjo)
+                await asyncio.sleep(max(0.0, zacetek + (cas + trajanje) / hitrost - zanka.time()))
+            if prekini and prekini():
+                break
+            od, cas = cas, cas + trajanje
+            if not besedilo:
+                print(f"[prepis] {oznaka} {pp.GOVORCI[vloga]}: (Whisper ni razbral govora)", flush=True)
                 continue
-            center.dodaj_segment(klic_id, o["vloga"], o["besedilo"], od, cas)
+            print(f"[prepis] {oznaka} {pp.GOVORCI[vloga]}: {besedilo}", flush=True)
+            center.dodaj_segment(klic_id, vloga, besedilo, od, cas)
             n += 1
-            await zapis.segment(o["oznaka"], f"{o['govorec']}: {o['besedilo']}")
+            await zapis.segment(oznaka, f"{pp.GOVORCI[vloga]}: {besedilo}")
     finally:
         await zapis.close()
     center.objava.objavi("prepis_stanje", {"klic_id": klic_id, "stanje": "konec", "vir": "whisper",
