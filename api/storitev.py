@@ -23,7 +23,7 @@ from dnevnik.shramba import Shramba
 from geokodiranje.geokoder import Geokoder
 from planer import dogodki as D
 from planer.vrp import Nastavitve, planiraj, preusmeri_po_zmogljivosti, primerjaj, sestavi_model
-from poslusalec.poslusalec import Poslusalec
+from poslusalec.ai import Poslusalec
 from usmerjanje.ponudniki import helikopter, zracna_ocena
 from usmerjanje.servis import UsmerjevalniServis
 from voznik.avtentikacija import Avtentikacija
@@ -519,7 +519,9 @@ class Center:
         if manjka:
             raise NapakaStoritve("Potrdite še: " + ", ".join(manjka), 422)
         lok = pot["lokacija"]
-        opis = " · ".join(str(x) for x in (pot.get("vrsta_dogodka"), pot.get("opis"), pot.get("stanje_pacienta")) if x)
+        vrsta = {"prometna_nesreca": "Prometna nesreča", "padec": "Padec", "bolecina_v_prsih": "Bolečina v prsih",
+                 "nezavest": "Nezavest", "porod": "Porod", "drugo": "Drugo"}.get(pot.get("vrsta_dogodka"), pot.get("vrsta_dogodka"))
+        opis = " · ".join(str(x) for x in (vrsta, pot.get("opis"), pot.get("stanje_pacienta")) if x)
         n = M.naloga("nujna_voznja", {"lat": lok["lat"], "lon": lok["lon"], "naslov": pot["naslov"],
                                       "orientacija": pot.get("orientacija")}, int(pot["prioriteta"]),
                      okno_od=time.time(), okno_do=time.time() + {1: 10, 2: 15, 3: 25, 4: 45, 5: 60}[int(pot["prioriteta"])] * 60,

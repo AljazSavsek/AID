@@ -46,8 +46,10 @@
     const zdaj = Date.now() / 1000;
     const vrstice = [];
     if (S.klic) vrstice.push(`<li class="aktiven"><span class="stevilka">${esc(S.klic.stevilka || "neznana številka")}</span><span class="cakanje">V TEKU</span><span class="podatek">${esc(S.klic.omrezje || "")}</span><span class="podatek"></span></li>`);
-    S.cakajoci.forEach((k, i) => vrstice.push(`<li class="${!S.klic && i === 0 ? "naslednji" : ""}"><span class="stevilka">${esc(k.stevilka)}</span>
-      <span class="cakanje">${AID.trajanje(zdaj - k.prispel)}</span><span class="podatek">${esc(k.omrezje || "")}</span><span class="podatek">čaka</span></li>`));
+    S.cakajoci.forEach((k, i) => vrstice.push(`<li class="${!S.klic && i === 0 ? "naslednji" : ""} ${S.klic ? "" : "izbirno"}" data-cakajoci="${esc(k.id)}"
+      title="${S.klic ? "" : "Klik = sprejmi ta klic"}"><span class="stevilka">${esc(k.stevilka)}</span>
+      <span class="cakanje">${AID.trajanje(zdaj - k.prispel)}</span><span class="podatek">${esc(k.omrezje || "")}</span>
+      <span class="podatek">${k.demo === "zvok" ? "zvok · čaka" : "čaka"}</span></li>`));
     $("vrsta-klicev").innerHTML = vrstice.join("") || `<li><span class="podatek">Ni čakajočih klicev.</span></li>`;
   }
   setInterval(izrisiVrsto, 1000);
@@ -78,16 +80,27 @@
         izrisiTelefon();
         return;
       }
-      const q = S.cakajoci[0];
+      await sprejmiKlic(S.cakajoci[0]);
+    } catch (e) { napaka(e); }
+  };
+  $("vrsta-klicev").addEventListener("click", (e) => {
+    const li = e.target.closest("[data-cakajoci]");
+    if (!li || (S.klic && S.klic.stanje === "v_teku")) return;
+    sprejmiKlic(S.cakajoci.find((q) => q.id === li.dataset.cakajoci)).catch(napaka);
+  });
+  async function sprejmiKlic(q) {
+    {
       if (!q) return;
-      const k = q.demo
-        ? await AID.api("/demo/klic", { metoda: "POST", telo: { hitrost: Number($("hitrost").value) } })
-        : await AID.api("/klic/zacni", { metoda: "POST", telo: { cakajoci_id: q.id } });
+      const hitrost = Number($("hitrost").value);
+      // demo: besedilni klic (klic1) ali zvočni klic (posnetki -> prepis govora -> AI)
+      const k = q.demo === "zvok" ? await AID.api("/demo/klic-zvok", { metoda: "POST", telo: { hitrost } })
+        : q.demo ? await AID.api("/demo/klic", { metoda: "POST", telo: { hitrost } })
+          : await AID.api("/klic/zacni", { metoda: "POST", telo: { cakajoci_id: q.id } });
       nastaviKlic({ ...k, omrezje: q.omrezje, segmenti: [], predlogi: [] });
       S.cakajoci = await AID.api("/cakajoci");
       izrisiVrsto(); izrisiTelefon();
-    } catch (e) { napaka(e); }
-  };
+    }
+  }
   ["tel-utisaj", "tel-zadrzi"].forEach((id) => ($(id).onclick = (e) => e.currentTarget.classList.toggle("vklopljen")));
 
   function nastaviKlic(k) {
@@ -314,6 +327,10 @@
       if (def.tip === "enota") telo += enoteHtml(null);
       gumbi = `<button class="gumb" data-akcija="uredi">+ Vnesi ročno <kbd>E</kbd></button>`;
     }
+    if (def.tip === "lokacija" && S.klic && !ureja) {
+      // približna lokacija (npr. le središče kraja) -> dispečer klikne točno mesto na mini karti
+      gumbi += `<button class="gumb${glavni && (glavni.zaupanje ?? 1) < 0.5 ? " rdec-obroba" : ""}" data-doloci-na-karti>📍 Določi na karti</button>`;
+    }
     const desno = potrjen ? `<span class="znacka temna">potrjeno</span>` : glavni ? `${zaupanjeHtml(glavni.zaupanje)}<span class="znacka">AI predlog</span>` : `<span class="znacka rdeca-bleda">manjka</span>`;
     return `<article class="${razred}" tabindex="0" data-polje="${def.polje}" aria-label="${esc(def.oznaka)}">
       <div class="k-glava"><span class="oznaka">${esc(def.oznaka)}</span><span class="desno">${desno}</span></div>
@@ -456,6 +473,15 @@
 
   async function obdelajAkcijo(e) {
     const c = e.target.closest(".citat"); if (c) { skociNaSegment(c.dataset.seg); return; }
+    if (e.target.closest("[data-doloci-na-karti]")) {
+      const mk = $("mini-karta");
+      mk.scrollIntoView({ behavior: "smooth", block: "center" });
+      mk.classList.add("izbiranje");
+      const lok = potrjenZa("lokacija") || odprtiZa("lokacija")[0];
+      if (karta && lok) karta.setView([lok.vrednost.lat, lok.vrednost.lon], 16); // približaj na ocenjeno mesto
+      AID.obvestilo("Določite lokacijo", "Kliknite točno mesto dogodka na karti.");
+      return;
+    }
     if (e.target.closest("[data-osvezi-najblizjo]")) {
       try {
         (await AID.api(`/klic/${S.klic.id}/najblizja`, { metoda: "POST" })).forEach(upsert);
@@ -622,7 +648,12 @@
     AID.podlagaKarte(karta);
     karta.on("click", async (e) => {
       if (!S.klic) return;
-      try { await shraniVrednost("lokacija", { lat: +e.latlng.lat.toFixed(6), lon: +e.latlng.lng.toFixed(6) }); izrisiVse.prisili = true; izrisiVse("lokacija"); }
+      try {
+        await shraniVrednost("lokacija", { lat: +e.latlng.lat.toFixed(6), lon: +e.latlng.lng.toFixed(6) });
+        $("mini-karta").classList.remove("izbiranje");
+        izrisiVse.prisili = true; izrisiVse("lokacija");
+        AID.obvestilo("Lokacija določena", "Časi prihoda vozil se preračunajo.");
+      }
       catch (e2) { napaka(e2); }
     });
   }
@@ -713,6 +744,14 @@
   AID.na("klic", (k) => { if (S.klic && k.id === S.klic.id) { Object.assign(S.klic, k); izrisiTelefon(); } else AID.api("/cakajoci").then((c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); }).catch(() => {}); });
   AID.na("enote", (e) => { S.enote = e; izrisiVse(); });
   AID.na("ai_stanje", (v) => nastaviAi(v.na_voljo));
+  AID.na("prepis_stanje", (p) => {
+    if (!S.klic || p.klic_id !== S.klic.id) return;
+    const el = $("st-prepis");
+    el.textContent = p.stanje === "nalagam" ? "nalagam model …" : p.stanje === "konec" ? (p.vir === "whisper" ? "končan" : "končan (rezerva)")
+      : p.vir === "whisper" ? "v živo (govor)" : "rezerva (shranjen prepis)";
+    el.className = "pika" + (p.vir && p.vir !== "whisper" ? " napaka" : "");
+    if (p.stanje !== "konec") AID.obvestilo("Prepis govora", p.sporocilo, p.vir && p.vir !== "whisper", 6000);
+  });
   (AID.naPrerazporeditev = AID.naPrerazporeditev || []).push((nalogaId, enota) => {
     if (S.posiljanje && S.posiljanje.naloga_id === nalogaId) { S.posiljanje.enota = enota; S.posiljanje.stanje = "poslano"; izrisiNapredek(); }
   });

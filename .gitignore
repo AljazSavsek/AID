@@ -6,3 +6,10 @@ podatki/
 .env
 aplikacija_voznik/build/
 .aid_voznik/
+# virtualna okolja (tudi v podmapah, npr. poslusalec/.venv iz ZAZENI.bat)
+.venv/
+**/.venv/
+venv/
+# novi prepisi samostojnega poslušalca (primeri v gitu ostanejo)
+poslusalec/prepisi/*.tmp
+poslusalec/prepisi/klic_*.json

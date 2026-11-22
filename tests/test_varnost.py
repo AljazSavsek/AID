@@ -142,7 +142,7 @@ def test_javnost_le_nujne_voznje_brez_podatkov(app):
 
 
 def test_ai_rezerva_je_vidna():
-    from poslusalec.poslusalec import Poslusalec, Pravila
+    from poslusalec.ai import Poslusalec, Pravila
 
     class Pokvarjen:
         ime = "oblak"

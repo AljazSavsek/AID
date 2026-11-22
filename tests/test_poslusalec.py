@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from poslusalec.poslusalec import Poslusalec, Pravila
+from poslusalec.ai import Poslusalec, Pravila
 from poslusalec.shema import NeveljavenIzhod, validiraj
 
 SEGMENTI = [dict(s, id=f"s{i + 1}") for i, s in enumerate(
