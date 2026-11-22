@@ -126,6 +126,7 @@ class DemoOvira(BaseModel):
 
 
 class DemoKlic(BaseModel):
+    cakajoci_id: str | None = None
     hitrost: float = 1.0
 
 
@@ -587,6 +588,31 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         return Response(vsebina, media_type="image/png", headers=glave)
 
     # ---------- demo ----------
+    @app.post("/demo/klic")
+    async def demo_klic(v: DemoKlic, u: str = Depends(uporabnik)):
+        """Sprejme čakajoči demo klic in predvaja njegov pogovor iz demo/klici.json z realnimi časi (namesto VoIP)."""
+        c = C()
+        q = next((q for q in c.cakajoci if q["id"] == v.cakajoci_id), None) if v.cakajoci_id else \
+            next((q for q in c.cakajoci if q.get("demo") and not q.get("zvok")), None)
+        pogovor = c.demo_klic(q["demo"]) if q and q.get("demo") else None
+        if not pogovor or not pogovor.get("segmenti"):
+            raise HTTPException(404, "ni besedilnega demo pogovora")
+        k = c.zacni_klic(u, cakajoci_id=q["id"])
+        konec = lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"  # noqa: E731
+        hitrost = max(0.25, v.hitrost)
+
+        async def tek():
+            zanka = asyncio.get_running_loop()
+            zacetek = zanka.time()
+            for seg in pogovor["segmenti"]:  # segment se pojavi ob koncu izgovorjene replike
+                await asyncio.sleep(max(0.0, zacetek + float(seg["do_s"]) / hitrost - zanka.time()))
+                if konec():
+                    return
+                with contextlib.suppress(NapakaStoritve):
+                    c.dodaj_segment(k["id"], seg["govorec"], seg["besedilo"], seg["od_s"], seg["do_s"])
+        c._v_ozadju(tek())
+        return k
+
     @app.post("/demo/klic-zvok")
     async def demo_klic_zvok(v: DemoKlic, u: str = Depends(uporabnik)):
         """Zvočni klic: posnetki poslusalec/zvok -> Whisper -> segmenti klica -> AI predlogi. Brez vnaprej določenega besedila."""
@@ -602,7 +628,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
                 raise HTTPException(503, zvok.razlog_ni_whisperja())
             if zvok.MODEL["stanje"] == "napaka" and not zvok.lahko_poskusi_znova():
                 raise HTTPException(503, "Prepis govora ni na voljo: " + zvok.MODEL["razlog"])
-        q = next((q for q in c.cakajoci if q.get("demo") == "zvok"), None)
+        q = next((q for q in c.cakajoci if q["id"] == v.cakajoci_id), None) if v.cakajoci_id else \
+            next((q for q in c.cakajoci if q.get("zvok")), None)
         k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 51 318 774")
         konec = lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"  # noqa: E731
 

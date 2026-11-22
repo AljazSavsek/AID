@@ -1,0 +1,215 @@
+{
+ "_opomba": "Vsi demo pogovori. Čakalna vrsta jih ponudi po vrsti; ko dispečer konča klic, je na vrsti naslednji (druga telefonska številka). Ko so vsi odigrani, se vrsta napolni znova. Pogovor s 'posnetki' se predvaja kot zvok (besedilo: 'prepis' {posnetek: besedilo}, sicer poslusalec/zvok/prepis.json ali zadnji Whisperjev prepis); pogovor s 'segmenti' se predvaja kot besedilo z realnimi časi (od_s, do_s).",
+ "klici": [
+  {
+   "id": "zvok",
+   "stevilka": "+386 51 318 774",
+   "omrezje": "Ljubljana – Center",
+   "opis": "Padec po stopnicah, Slovenska cesta (zvočni posnetki)",
+   "posnetki": "poslusalec/zvok",
+   "prepis": {}
+  },
+  {
+   "id": "klic1",
+   "stevilka": "+386 41 555 238",
+   "omrezje": "Ljubljana – Šiška",
+   "opis": "Scenarij 1: padec z lestve, Ljubljana – Šiška",
+   "segmenti": [
+    {
+     "govorec": "dispecer",
+     "od_s": 0.0,
+     "do_s": 2.6,
+     "besedilo": "Nujna medicinska pomoč, dober dan. Kaj se je zgodilo?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 3.1,
+     "do_s": 7.9,
+     "besedilo": "Dober dan, moj oče je padel z lestve, leži na tleh in se ne odziva!"
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 8.6,
+     "do_s": 10.4,
+     "besedilo": "Razumem. Povejte mi točen naslov, kjer ste."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 10.9,
+     "do_s": 15.8,
+     "besedilo": "Celovška cesta, mislim da 150, v Ljubljani, v Šiški."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 16.3,
+     "do_s": 17.6,
+     "besedilo": "Ali oče diha?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 18.0,
+     "do_s": 22.7,
+     "besedilo": "Ja, diha, ampak zelo težko. In iz glave mu teče kri."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 23.2,
+     "do_s": 24.6,
+     "besedilo": "Koliko je star vaš oče?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 25.0,
+     "do_s": 31.9,
+     "besedilo": "Dvainšestdeset. Oprostite, ni 150, je 105! Rumena hiša za bencinsko črpalko."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 32.5,
+     "do_s": 34.4,
+     "besedilo": "Ali je še kdo poškodovan?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 34.9,
+     "do_s": 37.6,
+     "besedilo": "Ne, samo oče. Sosed je tukaj z mano."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 38.1,
+     "do_s": 40.0,
+     "besedilo": "Na kateri številki ste dosegljivi?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 40.4,
+     "do_s": 43.0,
+     "besedilo": "Na tej, 041 555 238."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 43.6,
+     "do_s": 48.5,
+     "besedilo": "Pomoč je obveščena. Očeta ne premikajte, rano pritisnite s čisto krpo."
+    }
+   ]
+  },
+  {
+   "id": "zagorje",
+   "stevilka": "+386 31 207 114",
+   "omrezje": "Zagorje ob Savi",
+   "opis": "Prometna nesreča pri mostu (prepis prejšnjih posnetkov)",
+   "segmenti": [
+    {
+     "govorec": "dispecer",
+     "od_s": 0.0,
+     "do_s": 4.5,
+     "besedilo": "interzao obveščanje, povejte prosim, kaj se je zgodilo in odkod kličate."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 5.1,
+     "do_s": 10.5,
+     "besedilo": "Dobr dan, kličem iz Zagorija obsavi, pri mostu sta se zaletela dva automobila."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 11.1,
+     "do_s": 16.6,
+     "besedilo": "Pri katerom mostu ste, ali vidite kakšen napis, ali stavbo ki bi nam pomadala najti kraj."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 17.2,
+     "do_s": 23.4,
+     "besedilo": "Vidim tablo za železniško postajo. To im pri autobusnam postaja liščo na strani proti centru."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 24.0,
+     "do_s": 28.5,
+     "besedilo": "Da, preverim, čiste pripostaja lišču, ki je natančno pa sta automobila."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 29.1,
+     "do_s": 34.5,
+     "besedilo": "Malo napreju odmene med mostom in križiščam, ten auto je modar dubije sil."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 35.1,
+     "do_s": 38.2,
+     "besedilo": "ali izmesta, kjer stojite, vidite ljudi obvuzili."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 38.8,
+     "do_s": 45.4,
+     "besedilo": "Ja, po modrem auto stojita dve osobe, vsi vamo auto vidim še nekoga nas pred njem sedežu."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 46.0,
+     "do_s": 49.6,
+     "besedilo": "ali reste kovi, ko ljudi je bilo skupaj v obejha automobili."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 50.2,
+     "do_s": 56.1,
+     "besedilo": "Tega ne vem, vidim samo te tri ljudi. Nekdo z druge strani ceste tudi kljče po telefonu."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 56.7,
+     "do_s": 59.9,
+     "besedilo": "Prozumam. Kako je s prometom na oceku primostu?"
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 60.5,
+     "do_s": 65.7,
+     "besedilo": "v smiri proti centru vuzila stojijo. Po drugjem pasu se promet počasi premika."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 66.3,
+     "do_s": 72.6,
+     "besedilo": "Prejstev mi ni železniško postalo, je ne sreča pred mostom, ali za nim če se peljemo iz cintra."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 73.2,
+     "do_s": 78.7,
+     "besedilo": "Če prijdete iz centra je pred mostom, jaz sem na drugi strani ceste polek u voznega reda."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 79.3,
+     "do_s": 86.2,
+     "besedilo": "Hvala. Zabeleženo imam, da diri za dva automobila pred mostom in da število v deležencav, če ni potarjeno."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 86.8,
+     "do_s": 92.0,
+     "besedilo": "Tako je. Zdaj vidim, še napisna postaje lišču. Lako vam da preberem, če pomaga."
+    },
+    {
+     "govorec": "dispecer",
+     "od_s": 92.6,
+     "do_s": 96.1,
+     "besedilo": "Da, prosim, preberite ga tako kot je napisam na tabli."
+    },
+    {
+     "govorec": "klicatelj",
+     "od_s": 96.7,
+     "do_s": 102.7,
+     "besedilo": "Na tabli piše kolo dvo, postal bom pri telefonu, če bo ste potrebovali še kakšen podatek."
+    }
+   ]
+  }
+ ]
+}
