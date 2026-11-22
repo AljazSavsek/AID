@@ -78,3 +78,22 @@ def test_dispecer_uredi_dodatne_enote(cl):
     assert cl.post(f"/predlog/{p['id']}/spremeni", json={"vrednost": [drugo]}).json()["vrednost"] == [drugo]
     r = cl.post(f"/klic/{kid}/odobri").json()
     assert [n["dodeljena_enota"] for n in r["dodatne_naloge"]] == [drugo]
+
+
+def test_vec_enot_dovoljeno_glede_na_stevilo_poskodovanih(cl):
+    """Že od začetka (brez predloga AI) sme dispečer dodati enote – največ vozilo na poškodovanega + motorist + helikopter."""
+    kid = klic_z_lokacijo(cl)
+    glavna = next(x for x in cl.get(f"/klic/{kid}/predlogi").json() if x["polje"] == "predlagana_enota" and x["stanje"] != "zastarelo")
+    cl.post(f"/predlog/{glavna['id']}/sprejmi")
+    ostale = [e["id"] for e in cl.get("/enote").json() if e["id"] != glavna["vrednost"] and e["stanje"] not in ("okvara", "ni_na_voljo")]
+    # brez več poškodovanih dodatnih enot ni
+    cl.post(f"/klic/{kid}/rocno", json={"polje": "dodatne_enote", "vrednost": ostale[:1]})
+    assert cl.post(f"/klic/{kid}/odobri").status_code == 422
+    cl.post(f"/klic/{kid}/rocno", json={"polje": "stevilo_poskodovanih", "vrednost": 2})
+    assert Center.najvec_dodatnih(2) == 3
+    cl.post(f"/klic/{kid}/rocno", json={"polje": "dodatne_enote", "vrednost": ostale[:4]})
+    r = cl.post(f"/klic/{kid}/odobri")
+    assert r.status_code == 422 and "največ 3" in r.json()["napaka"]
+    cl.post(f"/klic/{kid}/rocno", json={"polje": "dodatne_enote", "vrednost": ostale[:3]})
+    r = cl.post(f"/klic/{kid}/odobri")
+    assert r.status_code == 200 and len(r.json()["dodatne_naloge"]) == 3

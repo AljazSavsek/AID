@@ -24,7 +24,15 @@
   ];
   const KLJUCNA = ["prioriteta", "predlagana_enota", "dodatne_enote"];
   // kartica »Dodatne enote« je vidna le, ko jo AI predlaga ali jo dispečer vnese (večja nesreča)
-  const vidno = (d) => !d.leSPredlogom || predlogiPolja(d.polje).some((p) => p.stanje !== "zastarelo") || S.urejanje[d.polje];
+  const vidno = (d) => !d.leSPredlogom || predlogiPolja(d.polje).some((p) => p.stanje !== "zastarelo") || S.urejanje[d.polje]
+    || (d.polje === "dodatne_enote" && stPoskodovanih() >= 2);
+  // število poškodovanih (potrjeno ali predlog AI) -> koliko enot sme dispečer poslati (vozilo na poškodovanega + motorist + helikopter)
+  function stPoskodovanih() {
+    const p = potrjenZa("stevilo_poskodovanih") || odprtiZa("stevilo_poskodovanih")[0];
+    return p ? Number(p.vrednost) || 0 : 0;
+  }
+  const najvecDodatnih = () => (stPoskodovanih() >= 2 ? stPoskodovanih() + 1 : 0);
+  const dodatne = () => { const p = potrjenZa("dodatne_enote") || odprtiZa("dodatne_enote")[0]; return (p && Array.isArray(p.vrednost)) ? p.vrednost : []; };
   const VRSTE = { prometna_nesreca: "Prometna nesreča", padec: "Padec", bolecina_v_prsih: "Bolečina v prsih", nezavest: "Nezavest", porod: "Porod", drugo: "Drugo" };
   const PRIORITETE = { 1: "1 – življenjsko ogrožen", 2: "2 – zelo nujno", 3: "3 – nujno", 4: "4 – manj nujno", 5: "5 – ni nujno" };
   const DOGODKI = { okvara_vozila: "Okvara vozila", megla: "Megla", nujna_naloga: "Nujna naloga", manjsa_zmogljivost_centra: "Manjša zmogljivost centra", sprememba_prioritete: "Sprememba prioritete" };
@@ -285,7 +293,9 @@
         <td class="eta">${Math.max(1, Math.round(x.cas_s / 60))} min</td><td>${(x.razdalja_m / 1000).toFixed(1)} km</td>
         <td><span class="kakovost ${kak}">${esc(x.kakovost)}</span></td>
         <td>${x.enota_id === izbrana ? '<span class="znacka temna">izbrano</span>'
-          : `<button class="gumb majhen ${prosto ? "temen" : ""}" data-izberi-enoto="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"}>Izberi</button>`}</td></tr>`;
+          : dodatne().includes(x.enota_id) ? `<button class="gumb majhen" data-dodatna-enota="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"} title="Odstrani iz dodatnih enot">− dodatna</button>`
+          : `<button class="gumb majhen ${prosto ? "temen" : ""}" data-izberi-enoto="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id ? "" : "disabled"}>Izberi</button>`
+            + (najvecDodatnih() && x.enota_id !== (p && p.vrednost) ? ` <button class="gumb majhen" data-dodatna-enota="${esc(x.enota_id)}" ${S.klic && !S.klic.naloga_id && dodatne().length < najvecDodatnih() ? "" : "disabled"} title="Večja nesreča: pošlji tudi to enoto">+ dodatna</button>` : "")}</td></tr>`;
     }).join("")}</tbody></table>`;
   }
   function obsegHtml(p) {
@@ -510,6 +520,14 @@
         potKljuc = null; izrisiVse("predlagana_enota");
         AID.obvestilo("Časi prihoda osveženi", "Če je zdaj hitrejša druga enota, je prikazana kot nov predlog.");
       } catch (e2) { napaka(e2); }
+      return;
+    }
+    const dod = e.target.closest("[data-dodatna-enota]");
+    if (dod) {
+      const id = dod.dataset.dodatnaEnota, zdaj = dodatne();
+      const novo = zdaj.includes(id) ? zdaj.filter((x) => x !== id) : [...zdaj, id];
+      if (novo.length > najvecDodatnih()) { AID.obvestilo("Preveč enot", `Za ${stPoskodovanih()} poškodovanih največ ${najvecDodatnih()} dodatnih enot.`, true); return; }
+      try { await shraniVrednost("dodatne_enote", novo); izrisiVse.prisili = true; izrisiVse("predlagana_enota"); } catch (e2) { napaka(e2); }
       return;
     }
     const en = e.target.closest("[data-izberi-enoto]");
