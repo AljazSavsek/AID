@@ -7,7 +7,21 @@
    "omrezje": "Ljubljana – Center",
    "opis": "Padec po stopnicah, Slovenska cesta (zvočni posnetki)",
    "posnetki": "poslusalec/zvok",
-   "prepis": {}
+   "prepis": {
+    "01_dispecer.wav": "Centr za obvejščenje. Kje potrebujete pomoč?",
+    "02_klicatelj.wav": "U Ljubljani. Smo pri nami na Slovenski cesti 8.20. Gospa je padla po stopnicah.",
+    "03_dispecer.wav": "Kje točno vas najde ekipa?",
+    "04_klicatelj.wav": "na pločniku pred uhodom slovinjske ciste. Stojim ob njej in imam modroj akno.",
+    "05_dispecer.wav": "Ste videli padec? Koliko ljudi je poškodovanih?",
+    "06_klicatelj.wav": "Samo tago spa. Pred minuto je jaz podrsnilo na zadnji stopnici. Padla je na desno stran.",
+    "07_dispecer.wav": "Va sliši? Lahko govori z vami?",
+    "08_klicatelj.wav": "Ja, gleda me in mi odgovarja. Dihamirno. Pravi, da jo bolj desnikovk.",
+    "09_dispecer.wav": "Vidite še kakšno poškodbo?",
+    "10_klicatelj.wav": "Nadesni dla ni ima odrgnino. Pravi, da je stara 70 let. Zdaj sedi natleh.",
+    "11_dispecer.wav": "Je poto ciste dohoda prosta?",
+    "12_klicatelj.wav": "Ja, pot je prosta. Sodeljevac čaka pri vhodu in bojkipi pokazal, ki je sva."
+   },
+   "prepis_vir": "Whisper (klic_85a8b3a72a184d7f9ab5ae078d672d38.json)"
   },
   {
    "id": "klic1",
