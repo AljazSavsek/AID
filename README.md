@@ -25,6 +25,9 @@ Linux/macOS, najhitreje (ustvari `.venv`, namesti vse, tudi Whisper, in zažene)
 ./zazeni.sh
 ```
 
+Če vozila vozijo po ravnih črtah (po zraku): `python diagnoza_poti.py` pove zakaj (ni ključa v `.env`, ključ zavrnjen,
+porabljena kvota, ni povezave); isto je izpisano ob zagonu in prikazano v vmesniku.
+
 Začetek nove izmene iz `demo/scenarij.json` (npr. po spremembi enot): `./zazeni.sh --ponastavi`.
 
 Ročno (v vklopljenem `.venv`):

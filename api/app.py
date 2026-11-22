@@ -533,7 +533,8 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
         # položaji niso v zgodovini dogodkov (enota_premik je samo WS) -> posnetek za polling
         polozaji = [{"enota_id": e["id"], "lat": e["lat"], "lon": e["lon"], **e["polozaj"]} for e in c.enote()]
         return {"seq": c.objava.seq, "dogodki": c.objava.od(od), "ai_na_voljo": c.ai_na_voljo,
-                "kakovost_poti": c.usmerjanje.javna_kakovost(), "cas": time.time(), "polozaji": polozaji}
+                "kakovost_poti": c.usmerjanje.javna_kakovost(), "razlog_poti": c.usmerjanje.razlog_ocene(),
+                "cas": time.time(), "polozaji": polozaji}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):

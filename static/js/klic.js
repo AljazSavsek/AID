@@ -871,10 +871,15 @@
     if (o.vrsta === "geokodiranje") $("mini-karta").classList.add("izbiranje");
   });
 
-  function nastaviKakovost(k) {
+  let zadnjiRazlog = null;
+  function nastaviKakovost(k, razlog) {
     const el = $("st-eta");
     el.textContent = k === "natančno" ? "natančno (s prometom)" : k === "brez prometa" ? "brez prometa" : k ? "ocena (ravne črte)" : "ocena v brskalniku";
     el.className = "pika" + (k === "natančno" ? "" : " napaka");
+    el.title = razlog || "";
+    // zakaj vozila vozijo po ravnih črtah – dispečer (in kdor zaganja demo) to izve takoj
+    if (razlog && razlog !== zadnjiRazlog) AID.obvestilo("Poti po cestah niso na voljo", razlog[0].toUpperCase() + razlog.slice(1) + ".", true, 12000);
+    zadnjiRazlog = razlog || null;
   }
 
   /* ================= zagon ================= */
@@ -890,8 +895,8 @@
       }
       const st = await AID.api("/stanje?od=999999999");
       nastaviAi(st.ai_na_voljo);
-      nastaviKakovost(st.kakovost_poti);
-      setInterval(() => AID.api("/stanje?od=999999999").then((x) => nastaviKakovost(x.kakovost_poti)).catch(() => nastaviKakovost(null)), 15000);
+      nastaviKakovost(st.kakovost_poti, st.razlog_poti);
+      setInterval(() => AID.api("/stanje?od=999999999").then((x) => nastaviKakovost(x.kakovost_poti, x.razlog_poti)).catch(() => nastaviKakovost(null)), 15000);
     } catch (e) {
       S.enote = AID.beri("aid_enote", []); // zadnje znano stanje
       $("st-eta").textContent = "ocena v brskalniku"; $("st-eta").className = "pika napaka";

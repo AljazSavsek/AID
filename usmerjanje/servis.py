@@ -119,6 +119,23 @@ class UsmerjevalniServis:
                 return p.kakovost
         return "ocena"
 
+    def razlog_ocene(self) -> str | None:
+        """Zakaj so poti le zračna ocena (za vmesnik, brez imena ponudnika); None = poti po cestah delujejo."""
+        import re
+        nastavljeni = [p for p in self.ponudniki if p.na_voljo()]
+        if not nastavljeni:
+            return "ključ za poti ni nastavljen v datoteki .env (glej .env.example; preverite s python diagnoza_poti.py) – vozila vozijo po zračni razdalji"
+        zdaj = self.ura()
+        if all(self.varovalke[p.ime].odprta_do > zdaj for p in nastavljeni):
+            napaka = " ".join(self.varovalke[p.ime].zadnja_napaka or "" for p in nastavljeni)
+            koda = re.search(r"HTTP (\d{3})", napaka)
+            if koda and koda.group(1) in ("401", "403"):
+                return f"ponudnik poti zavrača ključ (HTTP {koda.group(1)}: ključ ni veljaven ali nima dovoljenja za usmerjanje)"
+            return "ponudnik poti ni dosegljiv (" + (f"HTTP {koda.group(1)}" if koda else "ni povezave") + ")"
+        if zdaj - getattr(self, "_zadnja_omejitev", 0.0) < 60:
+            return "ponudnik poti omejuje zahtevke (preveč zahtevkov na sekundo ali porabljena dnevna kvota)"
+        return None
+
     def zdravje(self) -> dict:
         """SAMO za skrbnika (/interno/zdravje)."""
         return {
@@ -211,6 +228,8 @@ class UsmerjevalniServis:
         except asyncio.CancelledError:
             raise
         except NiIzpad as e:
+            if "omejitev" in str(e).lower():
+                self._zadnja_omejitev = self.ura()
             dnevnik.warning("ponudnik %s: %s (ne šteje kot izpad)", p.ime, e)
             raise
         except Exception as e:  # noqa: BLE001
