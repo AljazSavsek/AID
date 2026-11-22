@@ -84,6 +84,17 @@ def demo_kode() -> dict:
         return {}
 
 
+def stanje_poti() -> str:
+    """En testni izračun poti: ali bodo vozila vozila po cestah (in če ne, zakaj)."""
+    try:
+        import diagnoza_poti
+        diagnoza_poti.nalozi_env()
+        ok, opis = diagnoza_poti.preveri(5.0)
+    except Exception as e:  # noqa: BLE001
+        return f"Poti po cestah: ? ({type(e).__name__})"
+    return ("Poti po cestah: ✔ " if ok else "Poti po cestah: ✖ ") + opis + ("" if ok else "\n    -> podrobnosti: python diagnoza_poti.py")
+
+
 def stanje_prepisa() -> str:
     """Ali bo zvočni klic tekel z Whisperjem (isti Python kot strežnik: sys.executable)."""
     import importlib.util
@@ -183,6 +194,7 @@ def main() -> int:
     if disp:
         print("  Prijava dispečerja: " + ", ".join(f"{d['ime']} / {d['geslo']}" for d in disp))
     print("  " + stanje_prepisa())
+    print("  " + stanje_poti())
     print("  Ustavite s Ctrl+C.")
     print("═" * 64 + "\n")
     if not a.brez_brskalnika:

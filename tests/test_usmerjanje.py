@@ -170,3 +170,32 @@ def test_ni_poti_in_isti_kraj_ne_izklopita_ponudnika():
     # enota je že na cilju: brez klica ponudnika, čas 0
     r = run(s.izracunaj(DO, DO))
     assert r["cas_s"] == 0 and a.klici == 5
+
+
+def test_razlog_ocene_za_dispecerja():
+    """Ko vozila vozijo po ravnih črtah, vmesnik pove zakaj – brez imena ponudnika."""
+    from usmerjanje.ponudniki import Omejitev
+
+    class Brez(Ponudnik):
+        ime = "x"
+
+        def na_voljo(self):
+            return False
+    assert "ključ za poti ni nastavljen" in servis(Brez()).razlog_ocene()
+
+    class Zavrnjen(Lazen):
+        async def izracunaj(self, od, do, tip):
+            raise NapakaPonudnika("HTTP 403: <h1>Developer Inactive</h1>")
+    s = servis(Zavrnjen("tomtom"))
+    for i in range(4):
+        asyncio.run(s.izracunaj(OD, (DO[0] + i * 0.01, DO[1])))
+    r = s.razlog_ocene()
+    assert "HTTP 403" in r and "tomtom" not in r.lower() and "developer" not in r.lower()
+
+    class Omejen(Lazen):
+        async def izracunaj(self, od, do, tip):
+            raise Omejitev("omejitev hitrosti")
+    s = servis(Omejen("tomtom"))
+    asyncio.run(s.izracunaj(OD, DO))
+    assert "omejuje" in s.razlog_ocene()
+    assert servis(Lazen("tomtom")).razlog_ocene() is None
