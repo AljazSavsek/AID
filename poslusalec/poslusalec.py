@@ -152,35 +152,6 @@ def nalozi_model(ime=None):
     return _modeli[ime]
 
 
-class ShranjenPrepis:
-    """Rezerva, ko Whisper ni na voljo: zadnji resnični prepis teh posnetkov (prepisi/klic_*.json),
-    razdeljen po govorcih. Uporabi se le, če se število odsekov ujema s posnetki."""
-
-    def __init__(self, mapa=None, posnetki=None):
-        posnetki = posnetki or posnetki_klica()
-        datoteke = sorted(Path(mapa or MAPA / "prepisi").glob("klic_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        self.odseki = None
-        for d in datoteke:
-            try:
-                besedilo = json.loads(d.read_text(encoding="utf-8"))["text"]
-            except (OSError, ValueError, KeyError):
-                continue
-            deli = re.findall(r"(Dispečer|Klicatelj):\s*(.*?)(?=\s*(?:Dispečer|Klicatelj):|\Z)", besedilo, re.S)
-            vloge = [p.stem.split("_", 1)[1] for p in posnetki]
-            if len(deli) == len(posnetki) and all(GOVORCI[v] == g for v, (g, _) in zip(vloge, deli)):
-                self.odseki = {p.name: b.strip() for p, (_, b) in zip(posnetki, deli)}
-                self.vir = d.name
-                break
-        if self.odseki is None:
-            raise FileNotFoundError("Ni shranjenega prepisa za te posnetke.")
-
-    def transcribe(self, pot, **_):
-        class _S:  # oblika kot pri faster-whisper
-            def __init__(self, t):
-                self.text = t
-        return [_S(self.odseki.get(Path(pot).name, ""))], None
-
-
 class Konzola:
     def __init__(self):
         self.prejsnji = ""

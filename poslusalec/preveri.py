@@ -25,7 +25,7 @@ async def main() -> int:
         print("ANTHROPIC_API_KEY ni nastavljen (v .env ali okolju) – ni kaj preizkusiti.")
         return 1
     p = Poslusalec([OblakLLM()])
-    klic = json.loads((KOREN / "demo" / "klic1.json").read_text(encoding="utf-8"))
+    klic = json.loads((KOREN / "tests" / "podatki" / "klic1.json").read_text(encoding="utf-8"))
     segmenti = [dict(s, id=f"s{i + 1}") for i, s in enumerate(klic["segmenti"])]
     casi = []
     for n in (2, 4, 6, 8, 12):

@@ -50,7 +50,6 @@ for paket in ("fastapi", "uvicorn", "ortools", "anthropic", "faster_whisper", "c
 from poslusalec import poslusalec as pp  # noqa: E402
 
 posnetki = korak("Posnetki poslusalec/zvok", lambda: len(pp.posnetki_klica()))
-korak("Shranjen prepis (rezerva)", lambda: pp.ShranjenPrepis().vir)
 korak("Povezava do huggingface.co", lambda: __import__("httpx").get("https://huggingface.co/api/models/Systran/faster-whisper-small", timeout=10).status_code)
 ime = os.environ.get("AID_WHISPER_MODEL", "small")
 model = korak(f"Nalaganje modela Whisper '{ime}' (prvič prenos ~500 MB)", lambda: pp.nalozi_model() and "naložen")

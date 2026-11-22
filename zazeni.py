@@ -89,7 +89,7 @@ def stanje_prepisa() -> str:
     import importlib.util
     if importlib.util.find_spec("faster_whisper") is None:
         return (f"Prepis govora: ✖ faster-whisper ni nameščen v {sys.executable}\n"
-                "    -> source .venv/bin/activate && pip install -r requirements-zvok.txt (do takrat: shranjen prepis)")
+                "    -> source .venv/bin/activate && pip install -r requirements-zvok.txt (do takrat: brez prepisa, le ročni zapis)")
     ime = os.environ.get("AID_WHISPER_MODEL", "small")
     hf = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub"
     if any(hf.glob(f"models--*faster-whisper-{ime}")):

@@ -39,7 +39,7 @@ Kjer specifikacija ni določala podrobnosti, je izbrana najpreprostejša rešite
 ## Prepis in zajem
 | # | Odločitev | Razlog |
 |---|---|---|
-| 21 | Klic za demo prihaja kot besedilo (`demo/klic1.json`, `POST /demo/klic` ali `python -m zajem.simulator`). `prepis/stt.py` ima verigo oblak → faster-whisper (+ Silero VAD) → ročni zapis; VoIP (Twilio/Asterisk) še ni izveden. | Vrstni red izdelave, korak 6. |
+| 21 | ~~Klic za demo prihaja kot besedilo (`demo/klic1.json`, `POST /demo/klic`).~~ Nadomeščeno z #77: besedilo klica prihaja samo iz Whisperja. VoIP (Twilio/Asterisk) še ni izveden. | Vrstni red izdelave, korak 6. |
 
 ## Vmesnik
 | # | Odločitev | Razlog |
@@ -105,4 +105,4 @@ Odločitev #1 (izpuščen pogled voznika, `enota_premik`, sporočila ekip) za sp
 | 74 | Zvočni klic v aplikaciji (`zajem/zvok.py`, `POST /demo/klic-zvok`, klic »Zagorje ob Savi« v čakalni vrsti): odsek -> segment klica ob koncu odseka v realnem času -> AI predlogi. Rezerva: zadnji resnični prepis istih posnetkov (`prepisi/klic_*.json`, le če se ujema po številu in vrstnem redu govorcev), nato ročni zapis. Zvok ostane na strežniku (predvajanje le z `AID_PREDVAJAJ_ZVOK=1`). Neuspeh nalaganja modela se ne ponavlja 5 min. | Specifikacija 7 (prepis: lokalni Whisper -> ročni zapis) in pravilo 2.7. |
 | 75 | Pravila AI za prepis govora: kraj tudi iz napak prepisa (»Zagorija obsavi« -> Zagorje ob Savi, zaupanje 0,45), orientacija (most, železniška postaja, križišče), število oseb (0,45). Geokodiranje kraja brez ulice vrne le središče kraja (zaupanje ×0,3) -> kartica Lokacija ponudi »Določi na karti«. | Naslov se ne ugiba; dispečer določi točno mesto. |
 | 76 | `.venv` ne sodi v git (271 MB, Windows): odstranjen iz sledenja, `.gitignore` (`**/.venv/`); `ZAZENI.bat` ga ob naslednjem zagonu sam ustvari. Novi prepisi (`prepisi/klic_*.json`) se ne dodajajo v git. Knjižnice za prepis: `requirements-zvok.txt`. | Velikost repozitorija, sistemsko odvisne knjižnice. |
-
+| 77 | **Brez vnaprej določenega besedila klica.** Odstranjeni: besedilni demo klic (`/demo/klic`, `demo/klic1.json` -> le še testni podatek `tests/podatki/`), `zajem/simulator.py`, stari `prepis/` in rezerva s shranjenim prepisom. Besedilo klica prihaja le iz Whisperja nad posnetki `poslusalec/zvok`. Whisper se naloži ob zagonu strežnika (`AID_WHISPER_PREDNALOZI=0` izklopi); stanje `GET /prepis/stanje` in dogodek `prepis_model` -> »Stanje sistema → Prepis govora«. Če Whisper ni na voljo: jasna napaka z razlogom, klic se zapisuje ročno. Testi uporabijo nadomestni model, ki dekodira pravi zvok. | Zahteva ekipe: sistem naj se razvije iz mape poslušalec, ne iz statičnega besedila. |
