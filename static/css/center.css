@@ -241,3 +241,5 @@
 .izbira-enot { display: grid; gap: 4px; }
 .izbira-enot label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .izbira-enot .tip-vozila { margin-left: auto; }
+.izbira-vozila td:last-child { white-space: nowrap; text-align: right; }
+.izbira-vozila td:last-child .gumb { display: block; width: 100%; margin: 2px 0; }

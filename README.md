@@ -110,7 +110,9 @@ Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows
 **Več enot pri večji nesreči.** Ko AI iz klica razbere več poškodovanih (ali prometno nesrečo s prioriteto 1), se pod
 »Vozilo za odhod« pokaže kartica **Dodatne enote (večja nesreča)** z razlogom in dokazom iz prepisa
 (npr. »3 poškodovani → 3 reševalna vozila«; prioriteta 1–2 še motorist; 4+ poškodovanih helikopter). Dispečer predlog
-sprejme, uredi (kljukice) ali zavrne – »Sprejmi vse« ga nikoli ne potrdi. Ob »Odobri in pošlji« dobi vsaka potrjena
+sprejme, uredi (kljukice) ali zavrne – »Sprejmi vse« ga nikoli ne potrdi. Že od začetka (brez predloga AI) lahko ob
+≥ 2 poškodovanih v tabeli »Vozilo za odhod« z »+ dodatna« doda enote – največ število poškodovanih + 1 (vozilo na
+poskodovanega, motorist, helikopter); strežnik to preveri ob odobritvi. Ob »Odobri in pošlji« dobi vsaka potrjena
 enota svojo nalogo na istem kraju; plan se izračuna enkrat za vse.
 
 **Heartbeat.** Naprava voznika (spletni zaslon, aplikacija Flet, simulator vozil) vsakih 30 s pošlje `POST /voznik/heartbeat`

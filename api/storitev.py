@@ -413,6 +413,11 @@ class Center:
         skupaj = sum(potreba.values())
         return {"potreba": potreba, "skupaj": skupaj, "vecja": skupaj > 1, "razlog": "; ".join(razlogi)}
 
+    @staticmethod
+    def najvec_dodatnih(poskodovani: int) -> int:
+        """Koliko enot sme dispečer poslati POLEG glavne: pri ≥ 2 poškodovanih vozilo na vsakega + motorist + helikopter."""
+        return poskodovani + 1 if poskodovani >= 2 else 0
+
     def _predlagaj_dodatne(self, klic_id: str) -> dict | None:
         """Pri večji nesreči AI predlaga še dodatne enote (dispečer potrdi, uredi ali zavrne)."""
         k = self.klic(klic_id)
@@ -616,6 +621,12 @@ class Center:
         neznane = [e for e in dodatne if e not in enote or enote[e]["stanje"] in M.NERAZPOLOZLJIVA]
         if neznane:
             raise NapakaStoritve("Dodatne enote niso na voljo: " + ", ".join(neznane), 422)
+        if dodatne:
+            n_posk = int(self._vrednost(klic_id, "stevilo_poskodovanih")[0] or 0)
+            najvec = self.najvec_dodatnih(n_posk)
+            if len(dodatne) > najvec:
+                raise NapakaStoritve(f"Za {n_posk} poškodovanih je dovoljenih največ {najvec} dodatnih enot – "
+                                     "popravite število poškodovanih ali dodatne enote.", 422)
         dodatne_naloge = []
         for eid in dodatne:
             nd = M.naloga("nujna_voznja", dict(n["prevzem"]), n["prioriteta"], okno_od=n["okno_od"], okno_do=n["okno_do"],
