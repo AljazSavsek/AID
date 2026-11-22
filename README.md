@@ -86,6 +86,11 @@ python -m pytest -q tests
 
 ## Zvočni klic (prepis govora)
 
+**Demo pogovori** so vsi v `demo/klici.json` (vsak s svojo telefonsko številko): zvočni (posnetki iz `poslusalec/zvok`,
+besedilo v polju `prepis`) in besedilni (`segmenti` z realnimi časi). V čakalni vrsti so po vrsti; ko dispečer konča
+klic, »SPREJMI KLIC« sprejme naslednjega; ko so vsi odigrani, se vrsta napolni znova. Pogovor dodate z novim vnosom v
+`demo/klici.json` (ponovni zagon strežnika).
+
 V čakalni vrsti je **»Zvočni klic«** (oznaka »zvok«). Ko ga dispečer sprejme (klik na klic), strežnik
 prepisuje posnetke iz `poslusalec/zvok/` s faster-whisper, odsek za odsekom v realnem času; vsak odsek se pojavi v
 prepisu, AI poslušalec iz njega pripravi predloge.

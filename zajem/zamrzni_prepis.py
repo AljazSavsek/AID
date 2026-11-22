@@ -3,8 +3,8 @@
     python -m zajem.zamrzni_prepis            # iz zadnjega poslusalec/prepisi/klic_*.json
     python -m zajem.zamrzni_prepis --prazno   # predloga z vsemi posnetki za ročni vnos
 
-Rezultat je poslusalec/zvok/prepis.json ({posnetek: besedilo}); besedilo lahko ročno popravite
-(npr. napake prepisa krajevnih imen) in datoteko shranite v git – demo potem vedno pokaže to besedilo.
+Rezultat gre v demo/klici.json (polje »prepis« zvočnega pogovora: {posnetek: besedilo}), kjer so vsi demo
+pogovori; besedilo lahko ročno popravite (npr. napake prepisa krajevnih imen) in datoteko shranite v git.
 """
 from __future__ import annotations
 
@@ -22,9 +22,14 @@ def main(argv=None) -> int:
     ap.add_argument("--prepisi", action="store_true", help="prepiši obstoječo prepis.json")
     a = ap.parse_args(argv)
     posnetki = pp.posnetki_klica()
-    cilj = zvok._prepis_json()
-    if cilj.exists() and not a.prepisi:
-        print(f"{cilj} že obstaja – za prepis dodajte --prepisi.", file=sys.stderr)
+    cilj = zvok._klici_json()
+    klici = json.loads(cilj.read_text(encoding="utf-8")) if cilj.exists() else {"klici": []}
+    pogovor = next((k for k in klici.get("klici", []) if k.get("posnetki")), None)
+    if pogovor is None:
+        print(f"V {cilj} ni zvočnega pogovora (polje »posnetki«).", file=sys.stderr)
+        return 1
+    if any(str(v).strip() for v in (pogovor.get("prepis") or {}).values()) and not a.prepisi:
+        print(f"Zvočni pogovor v {cilj} že ima besedilo – za prepis dodajte --prepisi.", file=sys.stderr)
         return 1
     if a.prazno:
         besedila, vir = {p.name: "" for p in posnetki}, "prazna predloga"
@@ -36,9 +41,9 @@ def main(argv=None) -> int:
                   "ali uporabite --prazno.", file=sys.stderr)
             return 1
         besedila, vir = r
-    podatki = {"_opomba": f"Vnaprej določeno besedilo zvočnega klica za demo (vir: {vir}). Popravite po potrebi."}
-    podatki.update(besedila)
-    cilj.write_text(json.dumps(podatki, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    pogovor["prepis"] = besedila
+    pogovor["prepis_vir"] = vir
+    cilj.write_text(json.dumps(klici, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"Shranjeno: {cilj} ({len(besedila)} posnetkov, vir: {vir})")
     for k, v in besedila.items():
         print(f"  {k}: {v}")

@@ -61,13 +61,26 @@ def _iz_shranjenega_prepisa(posnetki: list[Path]) -> tuple[dict, str] | None:
     return None
 
 
+def _klici_json() -> Path:
+    from api.storitev import KOREN
+    return Path(os.environ.get("AID_DEMO_KLICI") or KOREN / "demo" / "klici.json")
+
+
 def besedilo_demo() -> tuple[dict, str] | None:
-    """({posnetek: besedilo}, vir) za demo ali None. Prednost ima prepis.json (popravljeno besedilo v gitu)."""
+    """({posnetek: besedilo}, vir) za demo ali None. Prednost: »prepis« zvočnega pogovora v demo/klici.json,
+    nato poslusalec/zvok/prepis.json, nato zadnji Whisperjev prepis istih posnetkov."""
     import json
     try:
         posnetki = pp.posnetki_klica()
     except FileNotFoundError:
         return None
+    try:
+        for k in json.loads(_klici_json().read_text(encoding="utf-8")).get("klici", []):
+            pr = k.get("prepis") or {}
+            if k.get("posnetki") and pr and all(p.name in pr and str(pr[p.name]).strip() for p in posnetki):
+                return {p.name: str(pr[p.name]).strip() for p in posnetki}, _klici_json().name
+    except (OSError, ValueError, AttributeError):
+        pass
     f = _prepis_json()
     if f.exists():
         try:

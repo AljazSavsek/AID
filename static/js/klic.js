@@ -60,11 +60,12 @@
     $("st-cakajocih").textContent = S.cakajoci.length;
     const zdaj = Date.now() / 1000;
     const vrstice = [];
-    if (S.klic) vrstice.push(`<li class="aktiven"><span class="stevilka">${esc(S.klic.stevilka || "neznana številka")}</span><span class="cakanje">V TEKU</span><span class="podatek">${esc(S.klic.omrezje || "")}</span><span class="podatek"></span></li>`);
-    S.cakajoci.forEach((k, i) => vrstice.push(`<li class="${!S.klic && i === 0 ? "naslednji" : ""} ${S.klic ? "" : "izbirno"}" data-cakajoci="${esc(k.id)}"
-      title="${S.klic ? "" : "Klik = sprejmi ta klic"}"><span class="stevilka">${esc(k.stevilka)}</span>
+    const vTeku = !!(S.klic && S.klic.stanje === "v_teku");  // končan klic ni več v vrsti; naslednji je na voljo
+    if (vTeku) vrstice.push(`<li class="aktiven"><span class="stevilka">${esc(S.klic.stevilka || "neznana številka")}</span><span class="cakanje">V TEKU</span><span class="podatek">${esc(S.klic.omrezje || "")}</span><span class="podatek"></span></li>`);
+    S.cakajoci.forEach((k, i) => vrstice.push(`<li class="${!vTeku && i === 0 ? "naslednji" : ""} ${vTeku ? "" : "izbirno"}" data-cakajoci="${esc(k.id)}"
+      title="${vTeku ? "" : "Klik = sprejmi ta klic"}"><span class="stevilka">${esc(k.stevilka)}</span>
       <span class="cakanje">${AID.trajanje(zdaj - k.prispel)}</span><span class="podatek">${esc(k.omrezje || "")}</span>
-      <span class="podatek">${k.demo === "zvok" ? "zvok · čaka" : "čaka"}</span></li>`));
+      <span class="podatek">${k.zvok ? "zvok · čaka" : "čaka"}</span></li>`));
     $("vrsta-klicev").innerHTML = vrstice.join("") || `<li><span class="podatek">Ni čakajočih klicev.</span></li>`;
   }
   setInterval(izrisiVrsto, 1000);
@@ -93,7 +94,7 @@
         if (AID.ustaviZvok) AID.ustaviZvok();
         const k = await AID.api(`/klic/${S.klic.id}/koncaj`, { metoda: "POST" });
         S.klic = { ...S.klic, ...k };
-        izrisiTelefon();
+        izrisiTelefon(); izrisiVrsto();
         return;
       }
       await sprejmiKlic(S.cakajoci[0]);
@@ -108,9 +109,10 @@
     {
       if (!q) return;
       const hitrost = Number($("hitrost").value);
-      // zvočni klic: posnetki iz mape poslusalec -> Whisper -> AI; ostali klici: dispečer zapisuje ročno
-      const k = q.demo === "zvok" ? await AID.api("/demo/klic-zvok", { metoda: "POST", telo: { hitrost } })
-        : await AID.api("/klic/zacni", { metoda: "POST", telo: { cakajoci_id: q.id } });
+      // demo pogovori iz demo/klici.json: zvočni (posnetki) ali besedilni (segmenti z realnimi časi); drugi: ročni zapis
+      const k = q.zvok ? await AID.api("/demo/klic-zvok", { metoda: "POST", telo: { hitrost, cakajoci_id: q.id } })
+        : q.demo ? await AID.api("/demo/klic", { metoda: "POST", telo: { hitrost, cakajoci_id: q.id } })
+          : await AID.api("/klic/zacni", { metoda: "POST", telo: { cakajoci_id: q.id } });
       nastaviKlic({ ...k, omrezje: q.omrezje, segmenti: [], predlogi: [] });
       if (AID.ponoviZgodnje) AID.ponoviZgodnje(k.id);
       S.cakajoci = await AID.api("/cakajoci");
@@ -801,6 +803,7 @@
   AID.na("vprasanja", (v) => { if (S.klic && v.klic_id === S.klic.id) { S.vprasanja = v.vprasanja; izrisiVprasanja(); } });
   AID.na("klic", (k) => { if (S.klic && k.id === S.klic.id) { Object.assign(S.klic, k); izrisiTelefon(); } else AID.api("/cakajoci").then((c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); }).catch(() => {}); });
   AID.na("enote", (e) => { S.enote = e; izrisiVse(); });
+  AID.na("cakajoci", (c) => { S.cakajoci = c; izrisiVrsto(); izrisiTelefon(); });  // po koncu klica: naslednji pogovor
   AID.na("ai_stanje", (v) => nastaviAi(v.na_voljo));
   const OPIS_MODELA = { demo: "pripravljen", ni_zagnan: "—", nalagam: "nalagam Whisper …", pripravljen: "Whisper pripravljen", napaka: "ni na voljo", ni_namescen: "Whisper ni nameščen" };
   function nastaviModel(m) {

@@ -86,14 +86,6 @@ def cl(tmp_path, monkeypatch):
         yield k
 
 
-def test_besedilni_demo_klic_ne_obstaja_vec():
-    koren = Path(__file__).parent.parent
-    assert not (koren / "demo" / "klic1.json").exists() and not (koren / "zajem" / "simulator.py").exists()
-    for f in list((koren / "api").glob("*.py")) + [koren / "static" / "js" / "klic.js"]:
-        t = f.read_text(encoding="utf-8")
-        assert "klic1" not in t and "/demo/klic\"" not in t, f
-
-
 def test_besedilo_je_odvisno_od_zvoka(tmp_path):
     """Če posnetek spremenimo, se spremeni tudi rezultat (besedilo ni vezano na ime klica)."""
     for p in pp.posnetki_klica():
@@ -238,14 +230,23 @@ def test_demo_iz_zadnjega_shranjenega_prepisa(tmp_path, testni_posnetki, monkeyp
 
 
 def test_zamrzni_prepis(tmp_path, testni_posnetki, monkeypatch):
+    """Zadnji Whisperjev prepis gre v demo/klici.json (polje »prepis« zvočnega pogovora) – vsi pogovori v eni datoteki."""
     from zajem import zamrzni_prepis
     mapa = tmp_path / "prepisi"
     mapa.mkdir()
     monkeypatch.setenv("AID_PREPISI_MAPA", str(mapa))
+    klici = tmp_path / "klici.json"
+    klici.write_text(json.dumps({"klici": [{"id": "zvok", "stevilka": "1", "posnetki": "x", "prepis": {}},
+                                           {"id": "b", "stevilka": "2", "segmenti": [{"govorec": "klicatelj", "od_s": 0, "do_s": 1, "besedilo": "x"}]}]}),
+                     encoding="utf-8")
+    monkeypatch.setenv("AID_DEMO_KLICI", str(klici))
     imena = sorted(ODGOVORI)
     tekst = " ".join(f"{'Dispečer' if '_dispecer' in i else 'Klicatelj'}: {i}" for i in imena)
     (mapa / "klic_x.json").write_text(json.dumps({"text": tekst}), encoding="utf-8")
     assert zamrzni_prepis.main([]) == 0
-    p = json.loads((testni_posnetki / "prepis.json").read_text(encoding="utf-8"))
-    assert p[imena[0]] == imena[0] and "_opomba" in p
+    p = json.loads(klici.read_text(encoding="utf-8"))
+    assert p["klici"][0]["prepis"][imena[0]] == imena[0] and p["klici"][1]["segmenti"]  # drugi pogovori ostanejo
     assert zamrzni_prepis.main([]) == 1  # ne prepiše brez --prepisi
+    monkeypatch.setenv("AID_ZVOK_VIR", "samodejno")
+    besedila, vir = zvok.besedilo_demo()
+    assert vir == "klici.json" and besedila[imena[2]] == imena[2]

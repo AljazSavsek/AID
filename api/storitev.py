@@ -119,7 +119,14 @@ class Center:
             self.db.revizija(SISTEM, "Scenarij", "demo", "ponastavitev", sorted(v_bazi), sorted(v_scenariju))
             dnevnik.warning("Enote v scenariju so se spremenile (%s -> %s) – stanje ponastavljeno iz scenarija.",
                             ", ".join(sorted(v_bazi - v_scenariju)) or "-", ", ".join(sorted(v_scenariju - v_bazi)) or "-")
-        self.cakajoci = [dict(k, id=f"q{i + 1}", prispel=t0 - 20 + 6 * i) for i, k in enumerate(sc.get("cakajoci_klici", []))]
+        self.cakajoci: list[dict] = []
+        self._st_cakajocih = 0
+        self.demo_klici = self._nalozi_demo_klice(sc, Path(pot))
+        if self.demo_klici:
+            self._napolni_vrsto(t0 - 20)
+        for k in sc.get("cakajoci_klici", []):  # starejši scenariji: klici brez pogovora
+            self._st_cakajocih += 1
+            self.cakajoci.append(dict(k, id=f"q{self._st_cakajocih}", prispel=t0 - 20 + 6 * self._st_cakajocih))
         if os.environ.get("AID_VOZNIK_DEMO_KODE") != "0":  # demo kode so v repozitoriju – v produkciji izklopi
             self.avtentikacija.nalozi_demo_kode(sc.get("kode_voznikov", {}))
         if self.db.vsi("enota"):
@@ -134,6 +141,31 @@ class Center:
                 if n.get(k) is not None:
                     n[k] = t0 + n[k] * 60
             self.db.shrani("naloga", n)
+
+    # ---------- demo pogovori (demo/klici.json) ----------
+    @staticmethod
+    def _nalozi_demo_klice(sc: dict, pot_scenarija: Path) -> list[dict]:
+        ime = os.environ.get("AID_DEMO_KLICI") or sc.get("demo_klici")
+        if not ime:
+            return []
+        f = Path(ime) if Path(ime).is_absolute() else KOREN / ime
+        try:
+            klici = json.loads(f.read_text(encoding="utf-8"))["klici"]
+        except (OSError, ValueError, KeyError) as e:
+            dnevnik.error("demo pogovori %s niso na voljo: %s", f, e)
+            return []
+        return [k for k in klici if k.get("id") and k.get("stevilka") and (k.get("segmenti") or k.get("posnetki"))]
+
+    def demo_klic(self, demo_id: str) -> dict | None:
+        return next((k for k in self.demo_klici if k["id"] == demo_id), None)
+
+    def _napolni_vrsto(self, od: float | None = None) -> None:
+        """Vsi demo pogovori v čakalno vrsto (vsak s svojo številko), v vrstnem redu iz datoteke."""
+        t = od if od is not None else time.time() - 6 * len(self.demo_klici)  # prvi v vrsti čaka najdlje
+        for i, k in enumerate(self.demo_klici):
+            self._st_cakajocih += 1
+            self.cakajoci.append({"id": f"q{self._st_cakajocih}", "stevilka": k["stevilka"], "omrezje": k.get("omrezje", ""),
+                                  "demo": k["id"], "zvok": bool(k.get("posnetki")), "prispel": t + 6 * i})
 
     def enote(self) -> list[dict]:
         """Enote z živim GPS položajem (če obstaja) in stanjem signala."""
@@ -189,6 +221,9 @@ class Center:
         self.db.shrani("klic", k)
         self.db.revizija(uporabnik, "Klic", klic_id, "konec", "v_teku", "zakljucen")
         self.objava.objavi("klic", k)
+        if self.demo_klici and not any(q.get("demo") for q in self.cakajoci):
+            self._napolni_vrsto()  # vsi demo pogovori odigrani -> znova od začetka (vsak z novim mestom v vrsti)
+        self.objava.objavi("cakajoci", self.cakajoci)
         return k
 
     def segmenti(self, klic_id: str) -> list[dict]:
