@@ -11,7 +11,7 @@ from api.storitev import Center
 from conftest import brez_ponudnikov
 from planer.vrp import Nastavitve
 
-SEGMENTI = json.loads((Path(__file__).parent.parent / "demo" / "klic1.json").read_text(encoding="utf-8"))["segmenti"]
+SEGMENTI = json.loads((Path(__file__).parent / "podatki" / "klic1.json").read_text(encoding="utf-8"))["segmenti"]
 HITRO = Nastavitve(casovna_omejitev_s=0.5, cas_alternative_s=0.2)
 
 
@@ -194,3 +194,10 @@ def test_websocket(odjemalec):
         assert ws.receive_json()["tip"] == "klic"
         cl.post(f"/klic/{kid}/segment", json=SEGMENTI[1])
         assert ws.receive_json()["tip"] == "segment"
+
+
+def test_ime_iz_seje_s_sumniki_glava_se_ne_uposteva(odjemalec):
+    from conftest import prijavi
+    prijavi(odjemalec, "Žiga Čeč")
+    kid = odjemalec.post("/klic/zacni", json={}, headers={"X-Uporabnik": "Ponarejen"}).json()["id"]
+    assert odjemalec.get("/revizija", params={"objekt_id": kid}).json()[0]["uporabnik"] == "Žiga Čeč"

@@ -1,15 +1,17 @@
 [
-  {"ulica": "Celovška cesta", "hisna_stevilka": "105", "kraj": "Ljubljana", "lat": 46.07138, "lon": 14.48870},
+  {"ulica": "Celovška cesta", "hisna_stevilka": "105", "kraj": "Ljubljana", "lat": 46.07138, "lon": 14.4887},
   {"ulica": "Celovška cesta", "hisna_stevilka": "150", "kraj": "Ljubljana", "lat": 46.07405, "lon": 14.48565},
   {"ulica": "Zaloška cesta", "hisna_stevilka": "2", "kraj": "Ljubljana", "lat": 46.05452, "lon": 14.52218},
-  {"ulica": "Vodnikova cesta", "hisna_stevilka": "62", "kraj": "Ljubljana", "lat": 46.06630, "lon": 14.48680},
-  {"ulica": "Trubarjeva cesta", "hisna_stevilka": "40", "kraj": "Ljubljana", "lat": 46.05300, "lon": 14.51120},
-  {"ulica": "Dunajska cesta", "hisna_stevilka": "160", "kraj": "Ljubljana", "lat": 46.08400, "lon": 14.51130},
-  {"ulica": "Tržaška cesta", "hisna_stevilka": "85", "kraj": "Ljubljana", "lat": 46.04540, "lon": 14.47550},
-  {"ulica": "Litijska cesta", "hisna_stevilka": "51", "kraj": "Ljubljana", "lat": 46.04880, "lon": 14.54200},
-  {"ulica": "Ižanska cesta", "hisna_stevilka": "10", "kraj": "Ljubljana", "lat": 46.03700, "lon": 14.51600},
-  {"ulica": "Cesta v Mestni log", "hisna_stevilka": "55", "kraj": "Ljubljana", "lat": 46.03950, "lon": 14.49300},
-  {"ulica": "Šmartinska cesta", "hisna_stevilka": "152", "kraj": "Ljubljana", "lat": 46.06650, "lon": 14.54250},
-  {"ulica": "Glavna cesta", "hisna_stevilka": "5", "kraj": "Brezovica", "lat": 46.02900, "lon": 14.41000},
-  {"ulica": "Glavna cesta", "hisna_stevilka": "5", "kraj": "Vrhnika", "lat": 45.96500, "lon": 14.29700}
+  {"ulica": "Vodnikova cesta", "hisna_stevilka": "62", "kraj": "Ljubljana", "lat": 46.0663, "lon": 14.4868},
+  {"ulica": "Trubarjeva cesta", "hisna_stevilka": "40", "kraj": "Ljubljana", "lat": 46.053, "lon": 14.5112},
+  {"ulica": "Dunajska cesta", "hisna_stevilka": "160", "kraj": "Ljubljana", "lat": 46.084, "lon": 14.5113},
+  {"ulica": "Tržaška cesta", "hisna_stevilka": "85", "kraj": "Ljubljana", "lat": 46.0454, "lon": 14.4755},
+  {"ulica": "Litijska cesta", "hisna_stevilka": "51", "kraj": "Ljubljana", "lat": 46.0488, "lon": 14.542},
+  {"ulica": "Ižanska cesta", "hisna_stevilka": "10", "kraj": "Ljubljana", "lat": 46.037, "lon": 14.516},
+  {"ulica": "Cesta v Mestni log", "hisna_stevilka": "55", "kraj": "Ljubljana", "lat": 46.0395, "lon": 14.493},
+  {"ulica": "Šmartinska cesta", "hisna_stevilka": "152", "kraj": "Ljubljana", "lat": 46.0665, "lon": 14.5425},
+  {"ulica": "Glavna cesta", "hisna_stevilka": "5", "kraj": "Brezovica", "lat": 46.0236, "lon": 14.4129},
+  {"ulica": "Glavna cesta", "hisna_stevilka": "5", "kraj": "Vrhnika", "lat": 45.965, "lon": 14.297},
+  {"ulica": "Zagorje ob Savi", "hisna_stevilka": "", "kraj": "Zagorje ob Savi", "lat": 46.1316, "lon": 14.9967, "samo_kraj": true},
+  {"ulica": "Ljubljana", "hisna_stevilka": "", "kraj": "Ljubljana", "lat": 46.0569, "lon": 14.5058, "samo_kraj": true}
 ]

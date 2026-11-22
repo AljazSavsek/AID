@@ -14,6 +14,7 @@ import collections
 import copy
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -22,16 +23,21 @@ from dnevnik.shramba import Shramba
 from geokodiranje.geokoder import Geokoder
 from planer import dogodki as D
 from planer.vrp import Nastavitve, planiraj, preusmeri_po_zmogljivosti, primerjaj, sestavi_model
-from poslusalec.poslusalec import Poslusalec
+from poslusalec.ai import Poslusalec
 from usmerjanje.ponudniki import helikopter, zracna_ocena
 from usmerjanje.servis import UsmerjevalniServis
+from voznik.avtentikacija import Avtentikacija
+from voznik.ekipa import Ekipa
+from voznik.naloge import NalogeVoznikov
+from voznik.nastavitve import NastavitveVoznika
+from voznik.polozaji import Polozaji
 
 dnevnik = logging.getLogger("center")
 KOREN = Path(__file__).resolve().parent.parent
 AI = "AI poslušalec"
 SISTEM = "sistem"
 OBVEZNA_ZA_ODOBRITEV = ("naslov", "lokacija", "prioriteta", "predlagana_enota")
-NIKOLI_SKUPINSKO = ("prioriteta", "predlagana_enota")
+NIKOLI_SKUPINSKO = ("prioriteta", "predlagana_enota", "dodatne_enote")
 
 
 class NapakaStoritve(Exception):
@@ -48,10 +54,15 @@ class Objava:
         self.zgodovina: collections.deque = collections.deque(maxlen=velikost)
         self.narocniki: set[asyncio.Queue] = set()
 
-    def objavi(self, tip: str, podatki) -> None:
-        self.seq += 1
-        sporocilo = {"seq": self.seq, "tip": tip, "cas": time.time(), "podatki": podatki}
-        self.zgodovina.append(sporocilo)
+    def objavi(self, tip: str, podatki, v_zgodovino: bool = True) -> None:
+        """v_zgodovino=False: pogosti prehodni dogodki (enota_premik) gredo samo v WebSocket
+        brez zaporedne številke, da ne izrinejo pomembnih dogodkov iz zgodovine za polling."""
+        if v_zgodovino:
+            self.seq += 1
+            sporocilo = {"seq": self.seq, "tip": tip, "cas": time.time(), "podatki": podatki}
+            self.zgodovina.append(sporocilo)
+        else:
+            sporocilo = {"tip": tip, "cas": time.time(), "podatki": podatki}
         for q in list(self.narocniki):
             try:
                 q.put_nowait(sporocilo)
@@ -65,7 +76,8 @@ class Objava:
 class Center:
     def __init__(self, shramba: Shramba | None = None, usmerjanje: UsmerjevalniServis | None = None,
                  geokoder: Geokoder | None = None, poslusalec: Poslusalec | None = None,
-                 scenarij: str | Path | None = None, nastavitve_planerja: Nastavitve | None = None):
+                 scenarij: str | Path | None = None, nastavitve_planerja: Nastavitve | None = None,
+                 nastavitve_voznika: NastavitveVoznika | None = None):
         self.db = shramba or Shramba(":memory:")
         self.usmerjanje = usmerjanje or UsmerjevalniServis()
         self.geokoder = geokoder or Geokoder()
@@ -77,13 +89,46 @@ class Center:
         self._ozadje: set[asyncio.Task] = set()
         self._plan_zaklep = asyncio.Lock()
         self.ai_na_voljo = True
+        # voznikova stran: identiteta naprav in živi položaji (ločeno od JSON enote)
+        self.nast_voznika = nastavitve_voznika or NastavitveVoznika.iz_okolja()
+        self.avtentikacija = Avtentikacija(self.db, self.nast_voznika)
+        self.polozaji = Polozaji(self.db, self.nast_voznika)
+        self.po_potrditvi_plana: list = []
+        self.naloge_voznikov = NalogeVoznikov(self, self.nast_voznika.rok_potrditve_s)
+        self.ekipa = Ekipa(self, self.naloge_voznikov)
+        from .ovire import Ovire
+        self.ovire = Ovire(self)
+        from voznik.heartbeat import Heartbeati
+        self.heartbeati = Heartbeati(self)
+        self.naloge_voznikov.ekipa = self.ekipa
         self.nalozi_scenarij(scenarij or KOREN / "demo" / "scenarij.json")
 
     # ================= scenarij in stanje =================
     def nalozi_scenarij(self, pot) -> None:
         sc = json.loads(Path(pot).read_text(encoding="utf-8"))
         t0 = time.time()
-        self.cakajoci = [dict(k, id=f"q{i + 1}", prispel=t0 - 20 + 6 * i) for i, k in enumerate(sc.get("cakajoci_klici", []))]
+        v_bazi = {e["id"] for e in self.db.vsi("enota")}
+        v_scenariju = {e["id"] for e in sc["enote"]}
+        if v_bazi and v_bazi != v_scenariju and os.environ.get("AID_SAMODEJNA_PONASTAVITEV", "1") == "1":
+            # demo: enote v scenariju so se spremenile (npr. odstranjen MOT-1) -> nova izmena iz scenarija.
+            # Revizijska sled ostane (vpis o ponastavitvi), drugo stanje (klici, naloge, plani, seje) se začne znova.
+            tabele = [r["name"] for r in self.db.izvedi("SELECT name FROM sqlite_master WHERE type='table'")
+                      if r["name"] not in ("revizija", "sqlite_sequence")]
+            for t in tabele:
+                self.db.izvedi(f'DELETE FROM "{t}"')
+            self.db.revizija(SISTEM, "Scenarij", "demo", "ponastavitev", sorted(v_bazi), sorted(v_scenariju))
+            dnevnik.warning("Enote v scenariju so se spremenile (%s -> %s) – stanje ponastavljeno iz scenarija.",
+                            ", ".join(sorted(v_bazi - v_scenariju)) or "-", ", ".join(sorted(v_scenariju - v_bazi)) or "-")
+        self.cakajoci: list[dict] = []
+        self._st_cakajocih = 0
+        self.demo_klici = self._nalozi_demo_klice(sc, Path(pot))
+        if self.demo_klici:
+            self._napolni_vrsto(t0 - 20)
+        for k in sc.get("cakajoci_klici", []):  # starejši scenariji: klici brez pogovora
+            self._st_cakajocih += 1
+            self.cakajoci.append(dict(k, id=f"q{self._st_cakajocih}", prispel=t0 - 20 + 6 * self._st_cakajocih))
+        if os.environ.get("AID_VOZNIK_DEMO_KODE") != "0":  # demo kode so v repozitoriju – v produkciji izklopi
+            self.avtentikacija.nalozi_demo_kode(sc.get("kode_voznikov", {}))
         if self.db.vsi("enota"):
             return  # obstoječe stanje iz SQLite
         for c in sc["centri"]:
@@ -97,12 +142,46 @@ class Center:
                     n[k] = t0 + n[k] * 60
             self.db.shrani("naloga", n)
 
+    # ---------- demo pogovori (demo/klici.json) ----------
+    @staticmethod
+    def _nalozi_demo_klice(sc: dict, pot_scenarija: Path) -> list[dict]:
+        ime = os.environ.get("AID_DEMO_KLICI") or sc.get("demo_klici")
+        if not ime:
+            return []
+        f = Path(ime) if Path(ime).is_absolute() else KOREN / ime
+        try:
+            klici = json.loads(f.read_text(encoding="utf-8"))["klici"]
+        except (OSError, ValueError, KeyError) as e:
+            dnevnik.error("demo pogovori %s niso na voljo: %s", f, e)
+            return []
+        return [k for k in klici if k.get("id") and k.get("stevilka") and (k.get("segmenti") or k.get("posnetki"))]
+
+    def demo_klic(self, demo_id: str) -> dict | None:
+        return next((k for k in self.demo_klici if k["id"] == demo_id), None)
+
+    def _napolni_vrsto(self, od: float | None = None) -> None:
+        """Vsi demo pogovori v čakalno vrsto (vsak s svojo številko), v vrstnem redu iz datoteke."""
+        t = od if od is not None else time.time() - 6 * len(self.demo_klici)  # prvi v vrsti čaka najdlje
+        for i, k in enumerate(self.demo_klici):
+            self._st_cakajocih += 1
+            self.cakajoci.append({"id": f"q{self._st_cakajocih}", "stevilka": k["stevilka"], "omrezje": k.get("omrezje", ""),
+                                  "demo": k["id"], "zvok": bool(k.get("posnetki")), "prispel": t + 6 * i})
+
+    def enote(self) -> list[dict]:
+        """Enote z živim GPS položajem (če obstaja) in stanjem signala."""
+        enote = self.polozaji.prekrij(self.db.vsi("enota"))
+        for e in enote:
+            e["voznik"] = self.naloge_voznikov.opis_za_dispecerja(e["id"])
+        return enote
+
     def stanje(self) -> dict:
-        return {"enote": self.db.vsi("enota"), "naloge": self.db.vsi("naloga"), "centri": self.db.vsi("center")}
+        return {"enote": self.enote(), "naloge": self.db.vsi("naloga"), "centri": self.db.vsi("center")}
 
     def _shrani_stanje(self, st: dict) -> None:
         for tip, kljuc in (("enota", "enote"), ("naloga", "naloge"), ("center", "centri")):
             for o in st[kljuc]:
+                if tip == "enota":
+                    o = {k: v for k, v in o.items() if k not in ("polozaj", "voznik")}  # prehodna polja (svoje tabele)
                 self.db.shrani(tip, o)
 
     def _v_ozadju(self, koro) -> asyncio.Task:
@@ -142,6 +221,9 @@ class Center:
         self.db.shrani("klic", k)
         self.db.revizija(uporabnik, "Klic", klic_id, "konec", "v_teku", "zakljucen")
         self.objava.objavi("klic", k)
+        if self.demo_klici and not any(q.get("demo") for q in self.cakajoci):
+            self._napolni_vrsto()  # vsi demo pogovori odigrani -> znova od začetka (vsak z novim mestom v vrsti)
+        self.objava.objavi("cakajoci", self.cakajoci)
         return k
 
     def segmenti(self, klic_id: str) -> list[dict]:
@@ -177,6 +259,11 @@ class Center:
                 self._ai_cakajoci.discard(klic_id)
                 st = self.stanje()
                 izhod = await self.poslusalec.obdelaj(self.segmenti(klic_id), self.predlogi(klic_id), st["enote"], st["centri"])
+                if self.poslusalec.rezerva != getattr(self, "_ai_rezerva", False):
+                    self._ai_rezerva = self.poslusalec.rezerva
+                    self.objava.objavi("opozorilo", {"vrsta": "ai_rezerva", "na_voljo": True,
+                                                     "sporocilo": "AI v oblaku ni na voljo – predloge pripravlja rezerva (manj natančno)."
+                                                     if self.poslusalec.rezerva else "AI v oblaku spet deluje."})
                 na_voljo = izhod is not None
                 if na_voljo != self.ai_na_voljo:
                     self.ai_na_voljo = na_voljo
@@ -203,6 +290,8 @@ class Center:
             await self._geokodiraj_predloge(klic_id)
         if spremenjena & {"naslov", "lokacija"}:
             await self._predlagaj_enoto(klic_id)
+        elif spremenjena & {"stevilo_poskodovanih", "prioriteta", "vrsta_dogodka"}:
+            self._predlagaj_dodatne(klic_id)
 
     def predlogi(self, klic_id: str) -> list[dict]:
         return self.db.vsi("predlog", klic_id=klic_id)
@@ -291,12 +380,13 @@ class Center:
                                                  "dokazi": dokazi, "dodatno": {"iz_naslova": k["naslov"]}})
 
     # ---------- usmerjanje + planer -> predlog enote ----------
-    async def eta_enot(self, lat: float, lon: float, omejitev: int = 3) -> list[dict]:
+    async def eta_enot(self, lat: float, lon: float, omejitev: int = 3, izogibaj_ovire: bool = False) -> list[dict]:
         """Časi prihoda prostih enot (samo čas, razdalja, kakovost – brez ponudnika)."""
-        enote = [e for e in self.db.vsi("enota") if e["stanje"] != "okvara"]
+        enote = [e for e in self.enote() if e["stanje"] not in M.NERAZPOLOZLJIVA]
 
         async def ena(e):
-            pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"])
+            rects = self.ovire.izogibanja((e["lat"], e["lon"]), (lat, lon))[0] if izogibaj_ovire and e["tip"] != "helikopter" else None
+            pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"], izogibaj=rects)
             zamik = max(0, (e.get("na_voljo_od") or 0) - time.time())
             return {"enota_id": e["id"], "tip": e["tip"], "ime": e["ime"], "stanje": e["stanje"],
                     "cas_s": round(pot["cas_s"] + zamik), "razdalja_m": pot["razdalja_m"], "kakovost": pot["kakovost"]}
@@ -310,14 +400,124 @@ class Center:
             max((p for p in za_lok if p["stanje"] == "predlagano"), key=lambda p: p["zaupanje"] or 0, default=None)
         if not lok:
             return
-        top = await self.eta_enot(lok["vrednost"]["lat"], lok["vrednost"]["lon"])
+        top = await self.eta_enot(lok["vrednost"]["lat"], lok["vrednost"]["lon"], omejitev=12)  # vse: dispečer izbere
         prosti = [t for t in top if t["stanje"] == "prosto"] or top
         if not prosti:
             return
         dokazi = lok["dokazi"] or [{"segment_id": "", "citat": "lokacija, ki jo je določil dispečer"}]
+        dodatno = {"enote": top, "izracunano": time.time()}
         self._uveljavi_posodobitev(klic_id, {"polje": "predlagana_enota", "vrednost": prosti[0]["enota_id"],
                                              "zaupanje": 0.8 if lok["stanje"] in M.POTRJENA else 0.65,
-                                             "dokazi": dokazi, "dodatno": {"enote": top}})
+                                             "dokazi": dokazi, "dodatno": dodatno})
+        # osveži tabelo časov tudi na že potrjenem predlogu (vrednosti ne spreminja)
+        for p in self.predlogi(klic_id):
+            if p["polje"] == "predlagana_enota" and p["stanje"] in M.POTRJENA:
+                p["dodatno"] = {**p.get("dodatno", {}), **dodatno}
+                self.db.shrani("predlog", p)
+                self.objava.objavi("predlog_posodobljen", p)
+        self._predlagaj_dodatne(klic_id)
+
+    # ---------- večja nesreča -> predlog več enot ----------
+    def _vrednost(self, klic_id: str, polje: str) -> tuple:
+        """(vrednost, predlog): potrjena, sicer najzanesljivejši odprt predlog."""
+        za = [p for p in self.predlogi(klic_id) if p["polje"] == polje]
+        p = next((x for x in za if x["stanje"] in M.POTRJENA), None) or \
+            max((x for x in za if x["stanje"] == "predlagano"), key=lambda x: x["zaupanje"] or 0, default=None)
+        return (p["vrednost"], p) if p else (None, None)
+
+    @staticmethod
+    def potrebne_enote(poskodovani: int | None, prioriteta: int | None, vrsta: str | None) -> dict:
+        """Koliko enot katerega tipa potrebuje dogodek. Reševalno vozilo pelje enega pacienta."""
+        n = int(poskodovani or 0)
+        prio = int(prioriteta or 3)
+        potreba = {"vozilo": min(max(n, 1), 6), "motorist": 0, "helikopter": 0}
+        razlogi = []
+        if n >= 2:
+            v = potreba["vozilo"]
+            razlogi.append(f"{n} {_sklanjaj(n, 'poškodovana', 'poškodovani', 'poškodovanih')} → "
+                           f"{v} {_sklanjaj(v, 'reševalni vozili', 'reševalna vozila', 'reševalnih vozil')} (vsako pelje enega pacienta)")
+            if prio <= 2:
+                potreba["motorist"] = 1
+                razlogi.append("prioriteta " + str(prio) + " → motorist za prvo pomoč")
+            if n >= 4 or (prio == 1 and n >= 3):
+                potreba["helikopter"] = 1
+                razlogi.append("veliko poškodovanih / življenjsko ogroženi → helikopter")
+        elif vrsta == "prometna_nesreca" and prio == 1:
+            potreba["motorist"] = 1
+            razlogi.append("prometna nesreča, prioriteta 1 → še motorist za prvo pomoč")
+        skupaj = sum(potreba.values())
+        return {"potreba": potreba, "skupaj": skupaj, "vecja": skupaj > 1, "razlog": "; ".join(razlogi)}
+
+    @classmethod
+    def najvec_dodatnih(cls, poskodovani: int, prioriteta: int | None = None, vrsta: str | None = None) -> int:
+        """Koliko enot sme dispečer poslati POLEG glavne: pri ≥ 2 poškodovanih vozilo na vsakega + motorist + helikopter;
+        nikoli manj, kot jih predlaga AI (npr. prometna nesreča s P1: še motorist)."""
+        po_stevilu = poskodovani + 1 if poskodovani >= 2 else 0
+        return max(po_stevilu, cls.potrebne_enote(poskodovani, prioriteta, vrsta)["skupaj"] - 1)
+
+    def _predlagaj_dodatne(self, klic_id: str) -> dict | None:
+        """Pri večji nesreči AI predlaga še dodatne enote (dispečer potrdi, uredi ali zavrne)."""
+        k = self.klic(klic_id)
+        if k.get("naloga_id"):
+            return None
+        n, pn = self._vrednost(klic_id, "stevilo_poskodovanih")
+        prio, _ = self._vrednost(klic_id, "prioriteta")
+        vrsta, _ = self._vrednost(klic_id, "vrsta_dogodka")
+        glavna, pe = self._vrednost(klic_id, "predlagana_enota")
+        ocena = self.potrebne_enote(n, prio, vrsta)
+        if not ocena["vecja"] or not pe:
+            return None
+        casi = (pe.get("dodatno") or {}).get("enote") or []
+        enote = {e["id"]: e for e in self.enote()}
+        potreba = dict(ocena["potreba"])
+        if glavna in enote:
+            potreba[enote[glavna]["tip"]] = max(0, potreba.get(enote[glavna]["tip"], 0) - 1)
+        izbrane = []
+        for t in sorted(casi, key=lambda x: (x["stanje"] != "prosto", x["cas_s"])):  # prosta najprej, nato najhitrejša
+            tip = enote.get(t["enota_id"], {}).get("tip")
+            if t["enota_id"] != glavna and potreba.get(tip, 0) > 0:
+                izbrane.append(t["enota_id"])
+                potreba[tip] -= 1
+        if not izbrane:
+            return None
+        manjka = {t: x for t, x in potreba.items() if x > 0}
+        dokazi = (pn or {}).get("dokazi") or [{"segment_id": "", "citat": f"število poškodovanih: {n}"}]
+        return self._uveljavi_posodobitev(klic_id, {
+            "polje": "dodatne_enote", "vrednost": izbrane, "zaupanje": 0.7, "dokazi": dokazi,
+            "dodatno": {"razlog": ocena["razlog"], "potreba": ocena["potreba"], "manjka": manjka}})
+
+    async def osvezi_najblizjo(self, klic_id: str, uporabnik: str) -> list[dict]:
+        """Ponovno poišče najbližjo enoto po trenutnem prometu. Sprememba je le PREDLOG."""
+        self.klic(klic_id)
+        self.db.revizija(uporabnik, "Klic", klic_id, "osvezi_najblizjo", None, None)
+        await self._predlagaj_enoto(klic_id)
+        return self.predlogi(klic_id)
+
+    @staticmethod
+    def _redci(geometrija: list, najvec: int = 400) -> list:
+        if len(geometrija) <= najvec:
+            return geometrija
+        korak = len(geometrija) / (najvec - 1)
+        return [geometrija[int(i * korak)] for i in range(najvec - 1)] + [geometrija[-1]]
+
+    async def pot_enote(self, enota_id: str, lat: float, lon: float) -> dict:
+        """Pot enote do cilja po cestah (s prometom, če je na voljo). Brez imena ponudnika."""
+        e = self.db.beri("enota", enota_id)
+        if not e:
+            raise NapakaStoritve("enota ne obstaja", 404)
+        pot = await self.usmerjanje.izracunaj((e["lat"], e["lon"]), (lat, lon), e["tip"])
+        zamik = max(0, (e.get("na_voljo_od") or 0) - time.time())
+        return {"enota_id": enota_id, "tip": e["tip"], "od": [e["lat"], e["lon"]], "do": [lat, lon],
+                "cas_s": round(pot["cas_s"] + zamik), "razdalja_m": pot["razdalja_m"],
+                "kakovost": pot["kakovost"], "geometrija": self._redci(pot["geometrija"])}
+
+    async def poti(self, odseki: list[dict]) -> list[dict]:
+        """Geometrija več odsekov naenkrat (za risanje plana po cestah)."""
+        async def en(o):
+            pot = await self.usmerjanje.izracunaj(tuple(o["od"]), tuple(o["do"]), o.get("tip", "vozilo"))
+            return {"cas_s": pot["cas_s"], "razdalja_m": pot["razdalja_m"], "kakovost": pot["kakovost"],
+                    "geometrija": self._redci(pot["geometrija"], 200)}
+        return list(await asyncio.gather(*(en(o) for o in odseki[:80])))
 
     # ================= dejanja dispečerja =================
     def predlog(self, predlog_id: str) -> dict:
@@ -359,6 +559,8 @@ class Center:
             await self._predlagaj_enoto(p["klic_id"])
         elif p["polje"] == "lokacija":
             await self._predlagaj_enoto(p["klic_id"])
+        elif p["polje"] in ("stevilo_poskodovanih", "prioriteta", "vrsta_dogodka", "predlagana_enota"):
+            self._predlagaj_dodatne(p["klic_id"])
         elif p["polje"] == "zaznani_dogodek_plana":
             d = M.dogodek(p["vrednost"]["tip"], p["vrednost"]["parametri"], "klic", "sprejeto", p["dokazi"], p["zaupanje"])
             d["potrdil"] = p["potrdil"]
@@ -440,33 +642,67 @@ class Center:
         if manjka:
             raise NapakaStoritve("Potrdite še: " + ", ".join(manjka), 422)
         lok = pot["lokacija"]
-        opis = " · ".join(str(x) for x in (pot.get("vrsta_dogodka"), pot.get("opis"), pot.get("stanje_pacienta")) if x)
+        vrsta = {"prometna_nesreca": "Prometna nesreča", "padec": "Padec", "bolecina_v_prsih": "Bolečina v prsih",
+                 "nezavest": "Nezavest", "porod": "Porod", "drugo": "Drugo"}.get(pot.get("vrsta_dogodka"), pot.get("vrsta_dogodka"))
+        opis = " · ".join(str(x) for x in (vrsta, pot.get("opis"), pot.get("stanje_pacienta")) if x)
         n = M.naloga("nujna_voznja", {"lat": lok["lat"], "lon": lok["lon"], "naslov": pot["naslov"],
                                       "orientacija": pot.get("orientacija")}, int(pot["prioriteta"]),
                      okno_od=time.time(), okno_do=time.time() + {1: 10, 2: 15, 3: 25, 4: 45, 5: 60}[int(pot["prioriteta"])] * 60,
                      opis=opis)
-        n.update(klic_id=klic_id, zelena_enota=pot["predlagana_enota"], podatki_klica=pot)
+        # vozilo je izbral dispečer -> zavezujoče za planer (ODLOCITVE #67)
+        n.update(klic_id=klic_id, zelena_enota=pot["predlagana_enota"], dodeljena_enota=pot["predlagana_enota"], podatki_klica=pot)
         d = M.dogodek("nujna_naloga", {"naloga": n}, "klic", "sprejeto")
+        # večja nesreča: za vsako dodatno enoto, ki jo je potrdil dispečer, svoja naloga na istem kraju
+        enote = {e["id"]: e for e in self.enote()}
+        dodatne = [e for e in (pot.get("dodatne_enote") or []) if e != pot["predlagana_enota"]]
+        neznane = [e for e in dodatne if e not in enote or enote[e]["stanje"] in M.NERAZPOLOZLJIVA]
+        if neznane:
+            raise NapakaStoritve("Dodatne enote niso na voljo: " + ", ".join(neznane), 422)
+        opozorilo = None
+        if dodatne:
+            # odloči dispečer (tudi preden je znano število poškodovanih); več enot, kot jih utemelji število
+            # poškodovanih, je dovoljeno, a zabeleženo kot opozorilo v reviziji in odgovoru
+            n_posk = int(self._vrednost(klic_id, "stevilo_poskodovanih")[0] or 0)
+            najvec = self.najvec_dodatnih(n_posk, self._vrednost(klic_id, "prioriteta")[0], self._vrednost(klic_id, "vrsta_dogodka")[0])
+            if len(dodatne) > najvec:
+                opozorilo = (f"Poslanih {len(dodatne)} dodatnih enot, število poškodovanih ({n_posk or 'ni znano'}) "
+                             f"utemelji {najvec}.")
+        dodatne_naloge = []
+        for eid in dodatne:
+            nd = M.naloga("nujna_voznja", dict(n["prevzem"]), n["prioriteta"], okno_od=n["okno_od"], okno_do=n["okno_do"],
+                          opis=f"Večja nesreča – dodatna enota · {opis}")
+            nd.update(klic_id=klic_id, zelena_enota=eid, dodeljena_enota=eid, glavna_naloga=n["id"], podatki_klica=pot)
+            dodatne_naloge.append(nd)
         k["naloga_id"] = n["id"]
+        k["dodatne_naloge"] = [x["id"] for x in dodatne_naloge]
         self.db.shrani("klic", k)
-        self.db.revizija(uporabnik, "Klic", klic_id, "odobri_in_poslji", None, {"naloga_id": n["id"], "podatki": pot})
+        self.db.revizija(uporabnik, "Klic", klic_id, "odobri_in_poslji", None,
+                         {"naloga_id": n["id"], "dodatne": {x["id"]: x["dodeljena_enota"] for x in dodatne_naloge}, "podatki": pot,
+                          **({"opozorilo": opozorilo} if opozorilo else {})})
+        for nd in dodatne_naloge:  # brez sprotnega planiranja – plan se izračuna enkrat za vse
+            await self.uveljavi_dogodek(M.dogodek("nujna_naloga", {"naloga": nd}, "klic", "sprejeto"), uporabnik, planiraj=False)
         plan = await self.uveljavi_dogodek(d, uporabnik, zelena_enota=(n["id"], pot["predlagana_enota"]))
-        return {"naloga": n, "plan_predlog": plan}
+        return {"naloga": n, "dodatne_naloge": dodatne_naloge, "plan_predlog": plan, "opozorilo": opozorilo}
 
     # ================= dogodki in plan =================
-    async def uveljavi_dogodek(self, d: dict, uporabnik: str, zelena_enota: tuple | None = None) -> dict | None:
+    async def uveljavi_dogodek(self, d: dict, uporabnik: str, zelena_enota: tuple | None = None,
+                               planiraj: bool = True) -> dict | None:
         st = self.stanje()
         try:
             opis = D.uveljavi(st, d)
         except D.NeveljavenDogodek as e:
             raise NapakaStoritve(str(e), 422) from e
-        d["stanje"] = "sprejeto"
+        d["stanje"] = "spremenjeno" if d.get("stanje") == "spremenjeno" else "sprejeto"
         d["opis"] = opis
         self.db.shrani("dogodek", d)
         self._shrani_stanje(st)
         self.db.revizija(uporabnik, "Dogodek", d["id"], "uveljavi", None, {"tip": d["tip"], "parametri": d["parametri"], "opis": opis})
+        if d["tip"] == "ovira_na_cesti":
+            self.ovire.objavi_vpliv()  # katera poslana vozila gredo čez oviro -> dispečer odloči o obvozu
         self.objava.objavi("dogodek", d)
-        self.objava.objavi("enote", self.db.vsi("enota"))
+        self.objava.objavi("enote", self.enote())
+        if not planiraj:  # npr. ovira na cesti: ne vpliva na dodelitve
+            return None
         return await self.predlagaj_plan(f"{d['tip']}: {opis}", zelena_enota)
 
     def plan_aktiven(self) -> dict | None:
@@ -478,9 +714,10 @@ class Center:
             raise NapakaStoritve("plan ne obstaja", 404)
         return p
 
-    async def _matrike(self, tocke: list[tuple], tipi: list[str], zacetki: int) -> tuple[dict, dict]:
-        """Osnova: hitra ocena za celotno matriko; vrstice od enot do ciljev
-        izboljša usmerjevalni servis (rok 1,5 s, sicer ostane ocena)."""
+    async def _matrike(self, tocke: list[tuple], tipi: list[str], zacetki: int, nujni: list[int] | None = None) -> tuple[dict, dict]:
+        """Osnova: hitra ocena za celotno matriko. Že znani časi s prometom (predpomnilnik)
+        jo izboljšajo brez klicev; po cestah se na novo računa le enote -> nujne naloge
+        (malo zahtev, da ne presežemo omejitve ponudnika)."""
         casi, razdalje = {}, {}
         for t in tipi:
             f = helikopter if t == "helikopter" else (lambda a, b, t=t: zracna_ocena(a, b, t))
@@ -493,16 +730,24 @@ class Center:
                         C[i][j], R[i][j] = p.cas_s, p.razdalja_m
             casi[t], razdalje[t] = C, R
         cestni = [t for t in tipi if t != "helikopter"]
+        for t in cestni:
+            for i, a in enumerate(tocke):
+                for j, b in enumerate(tocke):
+                    if i != j and a != (0.0, 0.0) and b != (0.0, 0.0):
+                        r = self.usmerjanje.iz_predpomnilnika(a, b, t)
+                        if r:
+                            casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
         izvori = tocke[:zacetki]
-        cilji = [(j, b) for j, b in enumerate(tocke[zacetki:], start=zacetki) if b != (0.0, 0.0)]
-        try:
-            for t in cestni:
-                m = await asyncio.wait_for(self.usmerjanje.matrika(izvori, [b for _, b in cilji], t), 1.5)
-                for i in range(len(izvori)):
-                    for (j, _), r in zip(cilji, m[i]):
-                        casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
-        except asyncio.TimeoutError:
-            dnevnik.info("matrika: rok presežen – uporabljena ocena")
+        cilji = [(j, tocke[j]) for j in (nujni or []) if tocke[j] != (0.0, 0.0)]
+        if cilji:
+            try:
+                for t in cestni:
+                    m = await asyncio.wait_for(self.usmerjanje.matrika(izvori, [b for _, b in cilji], t), 2.0)
+                    for i in range(len(izvori)):
+                        for (j, _), r in zip(cilji, m[i]):
+                            casi[t][i][j], razdalje[t][i][j] = r["cas_s"], r["razdalja_m"]
+            except asyncio.TimeoutError:
+                dnevnik.info("matrika: rok presežen – za del poti uporabljena ocena")
         return casi, razdalje
 
     async def predlagaj_plan(self, razlog: str, zelena_enota: tuple | None = None) -> dict | None:
@@ -513,10 +758,13 @@ class Center:
                 # dispečer je izbral enoto -> uporabi jo kot "prejšnjo dodelitev" (kazen za spremembo)
                 prejsnji = copy.deepcopy(prejsnji)
                 prejsnji["koraki_po_enoti"].setdefault(zelena_enota[1], []).insert(0, {"naloga_id": zelena_enota[0], "akcija": "prevzem"})
-            n_zacetkov = len([e for e in st["enote"] if e["stanje"] != "okvara"])
+            n_zacetkov = len([e for e in st["enote"] if e["stanje"] not in M.NERAZPOLOZLJIVA])
             opombe = preusmeri_po_zmogljivosti(st)  # najprej, da se vozlišča ujemajo z matriko
-            tocke = [(v.lat, v.lon) for v in sestavi_model(copy.deepcopy(st), time.time()).vozlisca]
-            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] != "okvara"}), n_zacetkov)
+            vozlisca = sestavi_model(copy.deepcopy(st), time.time()).vozlisca
+            tocke = [(v.lat, v.lon) for v in vozlisca]
+            nujni = [v.indeks for v in vozlisca if v.akcija == "prihod" and v.prioriteta <= 2]
+            casi, razdalje = await self._matrike(tocke, sorted({e["tip"] for e in st["enote"] if e["stanje"] not in M.NERAZPOLOZLJIVA}),
+                                                 n_zacetkov, nujni)
             loop = asyncio.get_running_loop()
             t0 = time.perf_counter()
             planovi = await loop.run_in_executor(None, lambda: planiraj(st, lambda *_: (casi, razdalje), prejsnji, self.nast))
@@ -526,7 +774,17 @@ class Center:
             if not planovi:
                 self.objava.objavi("opozorilo", {"vrsta": "plan", "sporocilo": "Plana ni bilo mogoče izračunati."})
                 return None
-            self._shrani_stanje(st)  # morebitne preusmeritve centrov
+            stari = [f"{e['id']}: položaj star {round(e['polozaj']['starost_s'] / 60)} min." for e in st["enote"]
+                     if e["stanje"] not in M.NERAZPOLOZLJIVA and (e.get("polozaj") or {}).get("signal") == "ni_signala"]
+            for p in planovi:
+                p["opombe"] = p["opombe"] + stari
+            # morebitne preusmeritve centrov: shrani SAMO spremenjeno dostavo. Celoten posnetek bi
+            # povozil stanja, ki jih je voznik sporočil med računanjem (tovor, opravljene naloge).
+            for n in st["naloge"]:
+                svez = self.db.beri("naloga", n["id"])
+                if svez and svez.get("dostava") != n.get("dostava") and svez.get("stanje") == "odprta":
+                    svez["dostava"] = n["dostava"]
+                    self.db.shrani("naloga", svez)
             for p in self.db.vsi("plan", stanje="predlog"):
                 p["stanje"] = "zamenjan"
                 self.db.shrani("plan", p)
@@ -569,13 +827,18 @@ class Center:
         self.db.shrani("plan", p)
         # stanje enot po potrjenem planu
         for e in self.db.vsi("enota"):
-            if e["stanje"] == "okvara":
+            if e["stanje"] in M.NERAZPOLOZLJIVA:
                 continue
             e["stanje"] = "na_nalogi" if p["koraki_po_enoti"].get(e["id"]) else "prosto"
             self.db.shrani("enota", e)
         self.db.revizija(uporabnik, "Plan", plan_id, "potrdi_plan", star["id"] if star else None, plan_id)
         self.objava.objavi("plan_aktiven", p)
-        self.objava.objavi("enote", self.db.vsi("enota"))
+        self.objava.objavi("enote", self.enote())
+        for f in self.po_potrditvi_plana:  # npr. obvestila voznikom (voznik/naloge.py)
+            try:
+                f(star, p)
+            except Exception:  # noqa: BLE001
+                dnevnik.exception("po potrditvi plana")
         return p
 
     def zavrni_plan(self, plan_id: str, uporabnik: str, razlog: str | None = None) -> dict:
@@ -587,6 +850,10 @@ class Center:
         self.db.revizija(uporabnik, "Plan", plan_id, "zavrni_plan", "predlog", {"razlog": razlog})
         self.objava.objavi("plan_zavrnjen", p)
         return p
+
+
+def _sklanjaj(n: int, dvojina: str, mnozina: str, rodilnik: str) -> str:
+    return dvojina if n % 100 == 2 else mnozina if n % 100 in (3, 4) else rodilnik
 
 
 def preveri_vrednost(polje: str, v):
@@ -610,6 +877,9 @@ def preveri_vrednost(polje: str, v):
             v = {"tip": v["tip"], "parametri": v.get("parametri", {})}
         elif polje == "vprasanja_za_klicatelja":
             v = [str(x) for x in v]
+        elif polje == "dodatne_enote":
+            v = list(dict.fromkeys(str(x).strip() for x in (v.split(",") if isinstance(v, str) else v) if str(x).strip()))
+            assert len(v) <= 12
         else:
             v = str(v).strip()
             assert v

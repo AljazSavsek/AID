@@ -1,0 +1,46 @@
+[project]
+name = "aid-voznik"
+version = "0.1.0"
+description = "AID – aplikacija voznika reševalne enote"
+requires-python = ">=3.10"
+dependencies = [
+  "flet==1.1.2",
+  "flet-geolocator==1.1.2",
+  "flet-permission-handler==1.1.2",
+  "flet-notifications==1.1.2",
+  "httpx>=0.27",
+  "websockets>=12",
+]
+
+[tool.flet]
+org = "si.aid"
+product = "AID voznik"
+company = "AID"
+permissions = ["location"]
+
+[tool.flet.app]
+path = "."
+module = "main"
+
+# Android: storitev v ospredju za GPS v ozadju (geolocator), wake lock, obvestila, izjema varčevanja baterije
+[tool.flet.android.permission]
+"android.permission.ACCESS_FINE_LOCATION" = true
+"android.permission.ACCESS_COARSE_LOCATION" = true
+"android.permission.ACCESS_BACKGROUND_LOCATION" = true
+"android.permission.FOREGROUND_SERVICE" = true
+"android.permission.FOREGROUND_SERVICE_LOCATION" = true
+"android.permission.POST_NOTIFICATIONS" = true
+"android.permission.WAKE_LOCK" = true
+"android.permission.VIBRATE" = true
+"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" = true
+"android.permission.INTERNET" = true
+
+# Samo za demo v lokalnem omrežju (http). Za pravo uporabo HTTPS in to izbrišite.
+[tool.flet.android.manifest_application]
+usesCleartextTraffic = true
+
+# iOS: lokacija v ozadju
+[tool.flet.ios.info]
+NSLocationWhenInUseUsageDescription = "Položaj enote se pošilja dispečerskemu centru med izmeno."
+NSLocationAlwaysAndWhenInUseUsageDescription = "Položaj enote se pošilja dispečerskemu centru med izmeno, tudi ko je zaslon ugasnjen."
+UIBackgroundModes = ["location", "fetch"]

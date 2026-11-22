@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1D2228">
+  <title>AID · Reševalno vozilo</title>
+  <link rel="icon" href="img/aid-logo.svg">
+  <link rel="manifest" href="manifest-voznik.webmanifest">
+  <link rel="apple-touch-icon" href="img/ikona-voznik-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="css/aid.css">
+  <link rel="stylesheet" href="css/voznik.css">
+</head>
+<body class="voznik">
+<header class="glava temna">
+  <img class="logo" src="img/aid-logo-svetel.svg" alt="AID">
+  <span class="izbira-enote">Vozilo <b id="enota-ime">—</b></span>
+  <span class="znacka" id="status-enote">—</span>
+  <div class="desno">
+    <button class="gumb majhen temen-obroba" id="gumb-gps" title="Pošiljaj položaj iz GPS naprave">GPS naprave</button>
+    <button class="gumb majhen temen-obroba" id="gumb-odjava">Odjava</button>
+    <span class="povezava" id="povezava">Povezovanje …</span>
+    <span class="ura" data-ura>--:--:--</span>
+  </div>
+</header>
+<div class="pas-povezave skrito" id="pas-povezave" role="status"></div>
+
+<main class="nav">
+  <div id="karta" class="nav-karta" aria-label="Navigacija"></div>
+
+  <!-- zgoraj levo: informacijske kartice -->
+  <section class="kartice-v" aria-label="Informacije">
+    <article class="kv eta">
+      <div class="kv-oznaka">Čas do prihoda</div>
+      <div class="eta-min"><span id="eta-min">—</span><small>min</small></div>
+      <div class="eta-podatki"><span id="eta-ura">—</span> · <span id="eta-km">—</span> <span class="kakovost-v" id="eta-kakovost"></span></div>
+      <div class="eta-zamuda skrito" id="eta-zamuda"></div>
+    </article>
+    <article class="kv ljudje">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-7 9a7 7 0 0 1 14 0Z" fill="currentColor"/><path d="M19.5 4.5a8 8 0 0 1 0 11M4.5 4.5a8 8 0 0 0 0 11" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+      <div><div class="kv-oznaka">Obveščenih v bližini</div><div class="ljudje-st"><span id="obvesceni">—</span><small id="obvesceni-op">simulacija</small></div></div>
+    </article>
+    <article class="kv opozorila">
+      <div class="kv-oznaka">Opozorila v živo</div>
+      <ul id="opozorila"><li class="ni">Ni opozoril na poti.</li></ul>
+    </article>
+  </section>
+
+  <!-- zgoraj na sredini: naslednji manever -->
+  <section class="manever skrito" id="manever" aria-live="polite">
+    <div class="manever-ikona" id="manever-ikona">↑</div>
+    <div><div class="manever-razdalja" id="manever-razdalja">—</div><div class="manever-besedilo" id="manever-besedilo">—</div></div>
+  </section>
+
+  <!-- desno: naloga -->
+  <section class="naloga-v" aria-label="Naloga">
+    <div class="naloga-glava"><span class="prio" id="prio">P–</span><div><div class="naloga-tip" id="naloga-tip">Ni naloge</div><div class="naloga-akcija" id="naloga-akcija">Čakam na potrjen plan dispečerja</div></div></div>
+    <div class="naslov-v" id="naslov">—</div>
+    <div class="orient-v" id="orientacija"></div>
+    <dl class="podatki-v" id="podatki"></dl>
+    <div class="naslednji-v" id="naslednji"></div>
+    <div class="statusi" id="statusi"></div>
+    <div class="akcije-v">
+      <button class="gumb" id="gumb-sporocilo">Sporočilo centru</button>
+      <button class="gumb" id="gumb-simulacija" title="Demo: vozilo se premika po poti">▶ Simuliraj vožnjo</button>
+      <button class="gumb" id="gumb-sledi" title="Kamera sledi vozilu">⌖</button>
+    </div>
+  </section>
+</main>
+
+<div class="prijava-ozadje skrito" id="prijava">
+  <form class="prijava-v" id="obrazec-prijave" autocomplete="off">
+    <img src="img/aid-logo-svetel.svg" alt="AID" height="40">
+    <h2>Prijava vozila</h2>
+    <label>Vozilo<select id="prijava-enota" required></select></label>
+    <label>Koda enote<input id="prijava-koda" required autocomplete="one-time-code" placeholder="npr. DEMO-RV2"></label>
+    <p class="napaka-prijave" id="napaka-prijave" role="alert"></p>
+    <button class="gumb rdec velik" type="submit">PRIJAVA</button>
+    <p class="pojasnilo-v">Kodo izda skrbnik. Demo kode: DEMO-RV1 … DEMO-RV6, DEMO-MOT2, DEMO-HELI.</p>
+  </form>
+</div>
+
+<dialog id="dlg-sporocilo" class="dlg-v">
+  <form method="dialog">
+    <h3>Sporočilo regijskemu centru</h3>
+    <p class="pojasnilo-v">Hitro sporočilo ali besedilo. Iz besedila AI pripravi predlog (npr. okvara), dispečer ga potrdi.</p>
+    <div class="hitra-mreza">
+      <button type="button" data-koda="zamuda">Zamuda</button>
+      <button type="button" data-koda="poklici_me">Pokliči me</button>
+      <button type="button" data-koda="potrebujem_pomoc" class="nujno">Potrebujem pomoč</button>
+      <button type="button" data-koda="policija" class="nujno">Policija potrebna</button>
+    </div>
+    <div class="hitra">
+      <button type="button" data-okvara>⚠ Okvara vozila (tovor ostane v vozilu)</button>
+      <button type="button" data-ovira>⛔ Ovira na cesti na moji lokaciji</button>
+      <select id="vrsta-ovire" aria-label="Vrsta ovire"><option value="zapora">zapora</option><option value="nesreca">nesreča</option>
+        <option value="dela_na_cesti">dela na cesti</option><option value="poplava">poplava</option><option value="zastoj">zastoj</option><option value="drugo">drugo</option></select>
+    </div>
+    <textarea id="sporocilo-besedilo" rows="3" maxlength="500" placeholder="Ali napišite sporočilo … (npr. »Vozilo je obstalo. Oprema je še v njem.«)"></textarea>
+    <div class="vrstica-gumbov"><button class="gumb" value="preklici">Prekliči</button><button class="gumb rdec" id="poslji-sporocilo" value="poslji">POŠLJI</button></div>
+  </form>
+</dialog>
+
+<script src="vendor/maplibre/maplibre-gl.js"></script>
+<script src="js/skupno.js"></script>
+<script src="js/voznik.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
+</body>
+</html>

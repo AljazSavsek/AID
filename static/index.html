@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AID · Regijski center</title>
   <link rel="icon" href="img/aid-logo.svg">
+  <link rel="manifest" href="manifest-center.webmanifest">
+  <link rel="apple-touch-icon" href="img/ikona-center-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -21,14 +23,27 @@
     <button data-pogled="plan">Plan in karta <span class="znacka rdeca skrito" id="znacka-plan">nov predlog</span></button>
   </nav>
   <div class="desno">
+    <a class="gumb majhen" href="voznik.html" target="_blank" rel="noopener" title="Demo: zaslon v reševalnem vozilu">Zaslon vozila ↗</a>
     <button class="gumb majhen" id="gumb-revizija">Revizijska sled</button>
     <span class="povezava" id="povezava">Povezovanje …</span>
-    <label class="uporabnik" title="Prijavljeni dispečer"><span class="avatar" id="avatar">MN</span>
-      <input id="ime-uporabnika" value="M. Novak" aria-label="Ime dispečerja" size="9"></label>
+    <span class="uporabnik" title="Prijavljeni dispečer"><span class="avatar" id="avatar">–</span>
+      <span id="ime-uporabnika">—</span><button class="gumb majhen" id="gumb-odjava-disp">Odjava</button></span>
     <span class="ura" data-ura>--:--:--</span>
   </div>
 </header>
 <div class="pas-povezave skrito" id="pas-povezave" role="status"></div>
+<div class="pas-ovire skrito" id="pas-ovire" role="alert" aria-live="assertive"></div>
+<div class="prijava-disp skrito" id="prijava-disp">
+  <form class="prijava-disp-okno" id="obrazec-prijave-disp" autocomplete="on">
+    <img src="img/aid-logo.svg" alt="AID" height="40">
+    <h2>Prijava dispečerja</h2>
+    <label>Ime<input id="prijava-ime" autocomplete="username" required></label>
+    <label>Geslo<input id="prijava-geslo" type="password" autocomplete="current-password" required></label>
+    <p class="napaka-prijave-disp" id="napaka-prijave-disp" role="alert"></p>
+    <button class="gumb rdec velik" type="submit">PRIJAVA</button>
+    <p class="pojasnilo">Vsako dejanje se v revizijsko sled zapiše pod prijavljenim imenom.</p>
+  </form>
+</div>
 
 <!-- ================= POGLED: KLIC ================= -->
 <main class="center" id="pogled-klic">
@@ -55,14 +70,18 @@
       <div class="plosca-glava"><h2>Stanje sistema</h2></div>
       <ul class="stanje-sistema">
         <li><span>Strežnik</span><span class="pika" id="st-streznik">…</span></li>
+        <li><span>Prepis govora</span><span class="pika" id="st-prepis">—</span></li>
         <li><span>AI poslušalec</span><span class="pika" id="st-ai">aktiven</span></li>
         <li><span>Časi prihoda</span><span class="pika" id="st-eta">—</span></li>
       </ul>
       <details class="demo-nastavitve">
         <summary>Demo</summary>
         <label>Hitrost demo klica
-          <select id="hitrost"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></label>
+          <select id="hitrost" autocomplete="off"><option value="1" selected>1× (realni čas)</option><option value="2">2×</option><option value="4">4×</option></select></label>
         <label><input type="checkbox" id="izpad-ai"> Simuliraj izpad AI poslušalca</label>
+        <div class="demo-ovire">Ovira na poti poslanega vozila:
+          <button class="gumb majhen" type="button" data-demo-ovira="zapora">1. Zapora ceste</button>
+          <button class="gumb majhen" type="button" data-demo-ovira="obtical">2. Vozilo obtiči</button></div>
       </details>
     </div>
   </section>
@@ -111,6 +130,7 @@
           <div id="mini-karta" class="mini-karta"></div>
           <div class="mini-karta-namig">Klik na karto = ročna lokacija</div>
         </div>
+        <div class="pot-povzetek" id="pot-povzetek" aria-live="polite"></div>
         <div id="kartice"></div>
       </div>
       <div class="obrazec-noga">
@@ -127,6 +147,18 @@
 <!-- ================= POGLED: PLAN IN KARTA ================= -->
 <main class="plan-pogled skrito" id="pogled-plan">
   <section class="plosca plan-enote" aria-label="Enote">
+    <div class="plosca-glava"><h2>Ekipe</h2></div>
+    <div class="ekipe">
+      <ul id="ekipe-eskalacije" class="ekipe-seznam" aria-label="Eskalacije"></ul>
+      <div id="ekipe-predlogi" class="ekipe-predlogi" aria-label="Predlogi ekip"></div>
+      <ul id="ekipe-sporocila" class="ekipe-seznam" aria-label="Sporočila"></ul>
+      <form id="obrazec-sporocila" class="obrazec-dogodka">
+        <label>Enota<select id="sp-enota"></select></label>
+        <label>Hitro sporočilo<select id="sp-hitro"></select></label>
+        <label>Besedilo<input id="sp-besedilo" maxlength="500"></label>
+        <button class="gumb temen" type="submit">Pošlji ekipi</button>
+      </form>
+    </div>
     <div class="plosca-glava"><h2>Enote</h2></div>
     <ul id="seznam-enot" class="seznam-enot"></ul>
     <div class="plosca-glava"><h2>Ročni dogodek</h2></div>
@@ -177,5 +209,8 @@
 <script src="js/povezava.js"></script>
 <script src="js/klic.js"></script>
 <script src="js/plan.js"></script>
+<script src="js/ovire.js"></script>
+<script src="js/ekipe.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>

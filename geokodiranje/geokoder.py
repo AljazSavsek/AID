@@ -55,6 +55,9 @@ class LokalniRegister:
                 continue
             if kraj and not brez_sumnikov(normaliziraj(z["kraj"])).startswith(kraj.split()[0][:5]):
                 continue
+            if z.get("samo_kraj"):  # središče kraja: zelo približno -> dispečer določi točno lokacijo na karti
+                out.append({"naslov": z["kraj"], "lat": z["lat"], "lon": z["lon"], "ujemanje": 0.3, "samo_kraj": True})
+                continue
             out.append({"naslov": f'{z["ulica"]} {z["hisna_stevilka"]}, {z["kraj"]}', "lat": z["lat"], "lon": z["lon"],
                         "ujemanje": 1.0 if hs else 0.5})
         return out

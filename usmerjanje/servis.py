@@ -19,7 +19,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from .ponudniki import Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena
+from .ponudniki import NiIzpad, Pot, Ponudnik, helikopter, privzeti_ponudniki, zracna_ocena, zracna_razdalja_m
 
 dnevnik = logging.getLogger("usmerjanje")
 
@@ -81,14 +81,24 @@ class UsmerjevalniServis:
     okno_predpomnilnika_s: int = 300
     ura: callable = time.time
 
+    vzporedno: int = 4
+
     def __post_init__(self):
+        self._mesta = None
         self.varovalke = {p.ime: Varovalka() for p in self.ponudniki}
         self._predpomnilnik: dict[tuple, Pot] = {}
         self.zdravje_stanje: dict[str, dict] = {}
 
     # ---------- javni vmesnik ----------
-    async def izracunaj(self, od, do, tip_enote: str = "vozilo") -> dict:
-        return (await self._izracunaj(tuple(od), tuple(do), tip_enote)).javno()
+    async def izracunaj(self, od, do, tip_enote: str = "vozilo", izogibaj: list | None = None) -> dict:
+        """izogibaj: območja (jug, zahod, sever, vzhod), npr. ovire na cesti."""
+        iz = tuple(tuple(round(x, 5) for x in r) for r in (izogibaj or ()))
+        return (await self._izracunaj(tuple(od), tuple(do), tip_enote, iz)).javno()
+
+    def iz_predpomnilnika(self, od, do, tip_enote: str = "vozilo") -> dict | None:
+        """Samo že izračunani časi (brez klica ponudnika)."""
+        p = self._predpomnilnik.get(self._kljuc(tuple(od), tuple(do), tip_enote)) or self._iz_predpomnilnika_brez_okna(tuple(od), tuple(do), tip_enote)
+        return p.javno() if p else None
 
     async def matrika(self, izvori: list, cilji: list, tip_enote: str = "vozilo", vzporedno: int = 8) -> list[list[dict]]:
         sem = asyncio.Semaphore(vzporedno)
@@ -99,6 +109,32 @@ class UsmerjevalniServis:
 
         naloge = [[ena(a, b) for b in cilji] for a in izvori]
         return [list(await asyncio.gather(*vrsta)) for vrsta in naloge]
+
+    def javna_kakovost(self) -> str:
+        """Najboljša trenutno dosegljiva kakovost – brez imena ponudnika (za vmesnik)."""
+        zdaj = self.ura()
+        for p in self.ponudniki:
+            v = self.varovalke[p.ime]
+            if p.na_voljo() and (v.odprta_do == 0.0 or zdaj >= v.odprta_do):
+                return p.kakovost
+        return "ocena"
+
+    def razlog_ocene(self) -> str | None:
+        """Zakaj so poti le zračna ocena (za vmesnik, brez imena ponudnika); None = poti po cestah delujejo."""
+        import re
+        nastavljeni = [p for p in self.ponudniki if p.na_voljo()]
+        if not nastavljeni:
+            return "ključ za poti ni nastavljen v datoteki .env (glej .env.example; preverite s python diagnoza_poti.py) – vozila vozijo po zračni razdalji"
+        zdaj = self.ura()
+        if all(self.varovalke[p.ime].odprta_do > zdaj for p in nastavljeni):
+            napaka = " ".join(self.varovalke[p.ime].zadnja_napaka or "" for p in nastavljeni)
+            koda = re.search(r"HTTP (\d{3})", napaka)
+            if koda and koda.group(1) in ("401", "403"):
+                return f"ponudnik poti zavrača ključ (HTTP {koda.group(1)}: ključ ni veljaven ali nima dovoljenja za usmerjanje)"
+            return "ponudnik poti ni dosegljiv (" + (f"HTTP {koda.group(1)}" if koda else "ni povezave") + ")"
+        if zdaj - getattr(self, "_zadnja_omejitev", 0.0) < 60:
+            return "ponudnik poti omejuje zahtevke (preveč zahtevkov na sekundo ali porabljena dnevna kvota)"
+        return None
 
     def zdravje(self) -> dict:
         """SAMO za skrbnika (/interno/zdravje)."""
@@ -137,25 +173,32 @@ class UsmerjevalniServis:
             await asyncio.sleep(interval_s)
 
     # ---------- notranjost ----------
-    def _kljuc(self, od, do, tip):
+    def _kljuc(self, od, do, tip, iz=()):
         okno = int(self.ura() // self.okno_predpomnilnika_s)
-        return (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, okno)
+        return (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, iz, okno)
 
     def _iz_predpomnilnika_brez_okna(self, od, do, tip):
         """Ob popolnem izpadu je stara vrednost boljša od zračne ocene."""
-        osnova = (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip)
+        osnova = (round(od[0], 4), round(od[1], 4), round(do[0], 4), round(do[1], 4), tip, ())
         kandidati = [(k[-1], v) for k, v in self._predpomnilnik.items() if k[:-1] == osnova]
         return max(kandidati, key=lambda x: x[0])[1] if kandidati else None
 
-    async def _izracunaj(self, od, do, tip) -> Pot:
+    async def _izracunaj(self, od, do, tip, iz=()) -> Pot:
         if tip == "helikopter":
             return helikopter(od, do)
-        kljuc = self._kljuc(od, do, tip)
+        if zracna_razdalja_m(od, do) < 30:  # enota je že na cilju
+            return Pot(0.0, 0.0, [list(od), list(do)], self._razpolozljivi()[0].kakovost if self._razpolozljivi() else "ocena")
+        kljuc = self._kljuc(od, do, tip, iz)
         if kljuc in self._predpomnilnik:
             return self._predpomnilnik[kljuc]
-        pot = await self._hedging(od, do, tip)
+        if self._mesta is None:
+            self._mesta = asyncio.Semaphore(self.vzporedno)
+        async with self._mesta:
+            if kljuc in self._predpomnilnik:  # medtem izračunal nekdo drug
+                return self._predpomnilnik[kljuc]
+            pot = await self._hedging(od, do, tip, iz)
         if pot is None:
-            star = self._iz_predpomnilnika_brez_okna(od, do, tip)
+            star = None if iz else self._iz_predpomnilnika_brez_okna(od, do, tip)
             if star is not None:
                 dnevnik.warning("vsi ponudniki nedosegljivi – uporabljen star predpomnilnik")
                 return Pot(star.cas_s, star.razdalja_m, star.geometrija, "ocena")
@@ -169,18 +212,25 @@ class UsmerjevalniServis:
             self._predpomnilnik.pop(next(iter(self._predpomnilnik)))
         return pot
 
-    def _razpolozljivi(self) -> list[Ponudnik]:
+    def _razpolozljivi(self, iz=()) -> list[Ponudnik]:
         zdaj = self.ura()
-        return [p for p in self.ponudniki if p.na_voljo() and self.varovalke[p.ime].dovoli(zdaj)]
+        return [p for p in self.ponudniki if p.na_voljo() and (not iz or p.podpira_izogibanje)
+                and self.varovalke[p.ime].dovoli(zdaj)]
 
-    async def _klic(self, p: Ponudnik, od, do, tip) -> Pot:
+    async def _klic(self, p: Ponudnik, od, do, tip, iz=()) -> Pot:
         try:
-            pot = await p.izracunaj(od, do, tip)
-            if not (pot.cas_s > 0 and pot.razdalja_m >= 0):
+            pot = await (p.izracunaj(od, do, tip, izogibaj=list(iz)) if iz else p.izracunaj(od, do, tip))
+            pot.izogiba = bool(iz)
+            if not (pot.cas_s >= 0 and pot.razdalja_m >= 0):
                 raise ValueError("neveljaven odgovor")
             self.varovalke[p.ime].uspeh(self.ura())
             return pot
         except asyncio.CancelledError:
+            raise
+        except NiIzpad as e:
+            if "omejitev" in str(e).lower():
+                self._zadnja_omejitev = self.ura()
+            dnevnik.warning("ponudnik %s: %s (ne šteje kot izpad)", p.ime, e)
             raise
         except Exception as e:  # noqa: BLE001
             if self.varovalke[p.ime].napaka(self.ura(), str(e)[:200]):
@@ -189,8 +239,8 @@ class UsmerjevalniServis:
                 dnevnik.warning("ponudnik %s napaka: %s", p.ime, e)
             raise
 
-    async def _hedging(self, od, do, tip) -> Pot | None:
-        vrsta = self._razpolozljivi()
+    async def _hedging(self, od, do, tip, iz=()) -> Pot | None:
+        vrsta = self._razpolozljivi(iz)
         if not vrsta:
             return None
         konec = asyncio.get_running_loop().time() + self.rok_s
@@ -200,7 +250,7 @@ class UsmerjevalniServis:
         def zazeni_naslednjega():
             if vrsta:
                 p = vrsta.pop(0)
-                tekoci[asyncio.ensure_future(self._klic(p, od, do, tip))] = p
+                tekoci[asyncio.ensure_future(self._klic(p, od, do, tip, iz))] = p
                 if len(tekoci) > 1 or p is not self.ponudniki[0]:
                     dnevnik.info("hedging: vzporedno kličem %s", p.ime)
 

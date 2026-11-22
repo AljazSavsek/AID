@@ -15,7 +15,7 @@ POTRJENA = ("sprejeto", "spremenjeno")
 POLJA_AI = (
     "vrsta_dogodka", "opis", "naslov", "orientacija", "lokacija", "stevilo_poskodovanih",
     "stanje_pacienta", "prioriteta", "potrebna_oprema", "predlagana_enota", "kontakt",
-    "vprasanja_za_klicatelja", "zaznani_dogodek_plana",
+    "vprasanja_za_klicatelja", "zaznani_dogodek_plana", "dodatne_enote",
 )
 # polja, ki jih predlaga LLM neposredno iz prepisa (lokacija pride iz geokodiranja,
 # predlagana_enota iz usmerjanja + planerja)
@@ -24,9 +24,14 @@ POLJA_LLM = (
     "stanje_pacienta", "prioriteta", "potrebna_oprema", "kontakt",
 )
 VRSTE_DOGODKA = ("prometna_nesreca", "padec", "bolecina_v_prsih", "nezavest", "porod", "drugo")
-TIPI_DOGODKOV = ("okvara_vozila", "megla", "nujna_naloga", "manjsa_zmogljivost_centra", "sprememba_prioritete")
+TIPI_DOGODKOV = ("okvara_vozila", "megla", "nujna_naloga", "manjsa_zmogljivost_centra", "sprememba_prioritete",
+                 # predlogi ekip (voznik/ekipa.py), dispečer jih potrdi
+                 "ovira_na_cesti", "prevoz_z_nujne_voznje", "enota_ni_na_voljo")
+VRSTE_OVIR = ("zapora", "nesreca", "dela_na_cesti", "poplava", "zastoj", "drugo")
 TIPI_NALOG = ("prevoz_pacienta", "prevoz_opreme", "nujna_voznja")
 TIPI_ENOT = ("vozilo", "motorist", "helikopter")
+STANJA_ENOTE = ("prosto", "na_nalogi", "okvara", "ni_na_voljo")
+NERAZPOLOZLJIVA = ("okvara", "ni_na_voljo")  # planer jih ne uporablja
 
 _stevec = itertools.count(1)
 

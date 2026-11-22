@@ -18,10 +18,43 @@ KRAJI = {"ljubljani": "Ljubljana", "mariboru": "Maribor", "celju": "Celje", "kra
          "kamniku": "Kamnik", "grosupljem": "Grosuplje"}
 NEGOTOVO = re.compile(r"\b(mislim|menda|nisem prepričan|nisem prepričana|morda|verjetno)\b", re.I)
 ULICA = re.compile(
-    r"((?:[A-ZČŠŽ][a-zčšž]+\s){0,2}(?:cesta|ulica|trg|pot|nabrežje|Cesta|Ulica|Trg)(?:\s(?:v|na|pod|ob)?\s?[A-ZČŠŽa-zčšž]+)?)"
+    r"((?:[A-ZČŠŽ][a-zčšž]+\s){0,2}(?:cesta|ulica|trg|pot|nabrežje|cesti|ulici|trgu|poti|nabrežju|Cesta|Ulica|Trg|Cesti|Ulici|Trgu)(?:\s(?:v|na|pod|ob)?\s?[A-ZČŠŽa-zčšž]+)?)"
     r"(?:,?\s*(?:mislim da|menda|številka)?\s*(\d+[a-zA-Z]?))?"
     r"(?:,?\s*v\s((?:novem mestu)|[A-ZČŠŽ][a-zčšž]+))?"
 )
+KRAJ_KLICA = re.compile(r"kličem iz ((?:[A-ZČŠŽ]\w+)(?:\s(?:ob\s?)?\w+)?)", re.I)
+# znani kraji (imenovalnik) in vzorci, ki ujamejo tudi napake prepisa govora
+ZNANI_KRAJI = [(r"^zagor\w*\s*(?:ob\s*)?sav", "Zagorje ob Savi"), (r"^ljubljan", "Ljubljana"), (r"^maribor", "Maribor"),
+               (r"^celj", "Celje"), (r"^kranj", "Kranj"), (r"^trbovl", "Trbovlje"), (r"^hrastnik", "Hrastnik"),
+               (r"^litij", "Litija"), (r"^domžal", "Domžale"), (r"^kamnik", "Kamnik")]
+
+
+def imenovalnik_ulice(ulica: str) -> str:
+    """Mestnik -> imenovalnik (»Celovški cesti« -> »Celovška cesta«, »Kongresnem trgu« -> »Kongresni trg«)."""
+    b = ulica.split()
+    if not b:
+        return ulica
+    jedro = {"cesti": "cesta", "ulici": "ulica", "poti": "pot", "trgu": "trg", "nabrežju": "nabrežje"}
+    for i, w in enumerate(b):
+        nov = jedro.get(w.lower())
+        if nov is None:
+            continue
+        b[i] = nov.capitalize() if w[0].isupper() else nov
+        zenski = nov in ("cesta", "ulica", "pot")
+        for j in range(i):  # pridevniki pred jedrom
+            if zenski and b[j].endswith("i") and len(b[j]) > 3:
+                b[j] = b[j][:-1] + "a"
+            elif nov in ("trg", "nabrežje") and b[j].endswith("em"):
+                b[j] = b[j][:-2] + ("i" if nov == "trg" else "o")
+        break
+    return " ".join(b)
+
+
+def _kraj(besedilo: str) -> str | None:
+    b = besedilo.lower().strip()
+    return next((ime for vz, ime in ZNANI_KRAJI if re.search(vz, b)), None)
+
+
 POPRAVEK_HS = re.compile(r"ni\s(\d+[a-z]?),?\s(?:ampak\s|temveč\s)?je\s(\d+[a-z]?)", re.I)
 TELEFON = re.compile(r"(?:\+386\s?|0)\d{1,2}[\s/]?\d{3}[\s]?\d{3}")
 
@@ -75,7 +108,7 @@ def izlusci(segmenti: list[dict], trenutni: dict[str, object] | None = None) -> 
                     nastavi("vrsta_dogodka", vrsta, 0.8, [_dokaz(seg, m.group(0))])
                     stavek = re.split(r"(?<=[.!?])\s", t)
                     st = next(s for s in stavek if m.group(0) in s).strip().rstrip("!.?")
-                    st = re.sub(r"^(dober dan|halo|prosim)[, ]*", "", st, flags=re.I)
+                    st = re.sub(r"^(dob\w*\s+dan|halo|prosim)[, ]*", "", st, flags=re.I)  # tudi »Dobr dan« iz prepisa
                     deli = [d.strip() for d in st.split(" in ")]
                     citat = deli[0] if m.group(0) in deli[0] else st
                     nastavi("opis", citat[0].upper() + citat[1:], 0.7, [_dokaz(seg, citat)])
@@ -89,20 +122,27 @@ def izlusci(segmenti: list[dict], trenutni: dict[str, object] | None = None) -> 
             # --- naslov
             m = ULICA.search(t)
             if m and m.group(2):
-                ulica, hs, kraj = m.group(1).strip(), m.group(2), m.group(3)
+                ulica, hs, kraj = imenovalnik_ulice(m.group(1).strip()), m.group(2), m.group(3)
                 kraj_ime = KRAJI.get((kraj or "").lower())
                 vrednost = f"{ulica} {hs}" + (f", {kraj_ime}" if kraj_ime else "")
                 z = 0.6 if NEGOTOVO.search(m.group(0)) else 0.8
                 if not kraj_ime:
                     z -= 0.2
                 nastavi("naslov", vrednost, round(z, 2), [_dokaz(seg, m.group(0).strip().rstrip(","))])
+            # kraj brez ulice (»kličem iz Zagorja ob Savi«) – tudi z napakami prepisa govora; nizko zaupanje
+            m = KRAJ_KLICA.search(t)
+            if m and "naslov" not in po and not trenutni.get("naslov"):
+                kraj = _kraj(m.group(1))
+                if kraj:
+                    nastavi("naslov", kraj, 0.45, [_dokaz(seg, m.group(0))])
             m = POPRAVEK_HS.search(t)
             prejsnji = (po.get("naslov") or {}).get("vrednost") or trenutni.get("naslov")
             if m and prejsnji and m.group(1) in str(prejsnji):
                 nastavi("naslov", str(prejsnji).replace(m.group(1), m.group(2), 1), 0.75, [_dokaz(seg, m.group(0))])
             # --- orientacija
             m = re.search(r"((?:rumen|bel|rdeč|zelen|modr|siv)\w*\s(?:hiš\w*|blok\w*|stavb\w*)\s)?"
-                          r"(?:za|pri|nasproti|ob)\s(?:\w+\s){0,2}(?:črpalk\w*|trgovin\w*|cerkv\w*|šol\w*|gostiln\w*|pošt\w*)", t, re.I)
+                          r"(?:za|pri|nasproti|ob|pred)\s(?:\w+\s){0,2}(?:črpalk\w*|trgovin\w*|cerkv\w*|šol\w*|gostiln\w*|pošt\w*"
+                          r"|most\w*|železnišk\w*\s\w*postaj\w*|križišč\w*)", t, re.I)
             if m:
                 nastavi("orientacija", m.group(0)[0].lower() + m.group(0)[1:], 0.85, [_dokaz(seg, m.group(0))])
             # --- stanje pacienta
@@ -117,6 +157,11 @@ def izlusci(segmenti: list[dict], trenutni: dict[str, object] | None = None) -> 
             m = re.search(r"(\w+)\s(?:sta|so)\s(?:poškodovan\w*|ranjen\w*)", t, re.I)
             if m and (n := stevilo_iz_besed(m.group(1))):
                 nastavi("stevilo_poskodovanih", n, 0.8, [_dokaz(seg, m.group(0))])
+            # število ljudi na kraju (ne nujno poškodovanih) – nizko zaupanje
+            for mm in re.finditer(r"\b(\w+)\s(?:ljudi|osebe|osebi|osob\w*)\b", t, re.I):
+                n = stevilo_iz_besed(mm.group(1).lower())
+                if n and n < 50:
+                    nastavi("stevilo_poskodovanih", n, 0.45, [_dokaz(seg, mm.group(0))])
             # --- kontakt
             m = TELEFON.search(t)
             if m:

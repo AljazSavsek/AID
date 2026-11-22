@@ -1,0 +1,3 @@
+# Prepis govora (poslusalec/poslusalec.py). Neobvezno: brez tega zvočni demo uporabi zadnji shranjen prepis.
+faster-whisper==1.2.1
+av==16.1.0

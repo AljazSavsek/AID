@@ -1,0 +1,11 @@
+Dispečer: Center za obveščanje. Kaj se je zgodilo?
+Klicatelj: Prometna nesreča. Kombi je trčil v parkiran avto.
+Dispečer: Kje se je to zgodilo?
+Klicatelj: Naslov je Testna ulica dvanajst, Zagorje ob Savi. Vhod je pri modri zapornici, nasproti avtobusnega postajališča.
+Dispečer: Ali na telefonu vidite koordinate mesta nesreče?
+Klicatelj: Na telefonu piše šestinštirideset vejica ena tri štiri severno in petnajst vejica nič nič ena vzhodno.
+Dispečer: Koliko oseb je poškodovanih in kaj vidite?
+Klicatelj: Poškodovana je ena oseba. Voznik je pri zavesti in diha. Pravi, da ga boli leva roka.
+Dispečer: Na kateri številki ste dosegljivi za povratni klic?
+Klicatelj: Moja telefonska številka je nič nič nič, ena dva tri, štiri pet šest.
+Dispečer: Podatke sem zapisal. Za to vajo bom ročno vnesel prioriteto, izbral opremo in določil vozilo za odhod.
