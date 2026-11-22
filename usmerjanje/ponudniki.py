@@ -99,6 +99,21 @@ class Ponudnik:
         raise NotImplementedError
 
 
+def vrsta_omejitve(r) -> str | None:
+    """Ali je odgovor ponudnika omejitev zahtevkov (ne izpad)? 'qps' = preveč na sekundo (kratek premor),
+    'kvota' = porabljena dnevna kvota (daljši premor). TomTom za prekoračitev pogosto vrne 403
+    »Developer Over Qps« / »Developer Over Rate« namesto 429."""
+    if r.status_code == 429:
+        return "qps"
+    if r.status_code == 403:
+        t = (r.text or "")[:500].lower()
+        if "over qps" in t or "too many" in t or "qps" in t:
+            return "qps"
+        if "over rate" in t or "rate limit" in t or "quota" in t or "rate" in t:
+            return "kvota"
+    return None
+
+
 class _HttpPonudnik(Ponudnik):
     def __init__(self, odjemalec: httpx.AsyncClient | None = None):
         self._odjemalec = odjemalec
@@ -138,7 +153,7 @@ class TomTom(_HttpPonudnik):
                     r = await self.http.post(url, params=parametri, json=telo)
                 else:
                     r = await self.http.get(url, params=parametri)
-            if r.status_code == 429 or (r.status_code == 403 and "rate" in r.text.lower()):
+            if vrsta_omejitve(r):
                 if poskus == 1:
                     await asyncio.sleep(min(1.0, float(r.headers.get("retry-after", 0.5) or 0.5)))
                     continue

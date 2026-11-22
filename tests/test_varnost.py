@@ -88,9 +88,10 @@ def test_ploscice_z_zetonom_voznika_in_meje_obmocja(anon, monkeypatch):
     assert anon.get("/ploscice/stanje", headers=h).status_code == 200
     assert anon.get("/ploscice/karta/12/2218/1453.png", headers=h).status_code == 404  # brez ključa: ni ploščice (a ni 401)
     prijavi(anon)
-    assert anon.get("/ploscice/karta/12/0/0.png").status_code == 404     # izven Slovenije
-    assert anon.get("/ploscice/karta/3/4/2.png").status_code == 404      # premajhna povečava
-    assert anon.get("/ploscice/karta/22/1/1.png").status_code == 404
+    from api.app import PRAZNA_PLOSCICA
+    for pot in ("/ploscice/karta/12/0/0.png", "/ploscice/karta/3/4/2.png", "/ploscice/karta/22/1/1.png"):
+        r = anon.get(pot)  # izven Slovenije / premajhna ali prevelika povečava: prazna ploščica, brez klica ponudnika
+        assert r.status_code == 200 and r.content == PRAZNA_PLOSCICA, pot
 
 
 def test_poti_izven_obmocja_in_omejitev(app):

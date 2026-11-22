@@ -175,6 +175,20 @@ def ploscica_v_obmocju(z: int, x: int, y: int) -> bool:
     return vzhod >= zz and zahod <= v and sever >= j and jug <= s_
 
 
+# prosojna ploščica 256×256 (PNG) za ploščice zunaj območja
+def _prazna_ploscica() -> bytes:
+    import struct
+    import zlib
+    vrstica = b"\x00" + b"\x00\x00\x00\x00" * 256  # filter 0 + 256 prosojnih RGBA pikslov
+
+    def kos(tip, podatki):
+        return struct.pack(">I", len(podatki)) + tip + podatki + struct.pack(">I", zlib.crc32(tip + podatki) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + kos(b"IHDR", struct.pack(">IIBBBBB", 256, 256, 8, 6, 0, 0, 0))
+            + kos(b"IDAT", zlib.compress(vrstica * 256, 9)) + kos(b"IEND", b""))
+
+
+PRAZNA_PLOSCICA = _prazna_ploscica()
+
 # omejitve zahtevkov (na dispečerja/napravo/IP), da ne gre kvota zunanjih ponudnikov
 OMEJITVE = {"ploscice": 2400, "poti": 30, "pot": 120, "eta": 120, "prijava": 10, "javnost": 60}
 
@@ -556,7 +570,9 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
     @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")
     async def ploscica(sloj: str, z: int, x: int, y: int, request: Request):
         if not ploscica_v_obmocju(z, x, y):
-            raise HTTPException(404, "ploščica izven območja")
+            # zunaj Slovenije: prazna (prosojna) ploščica namesto napake – brskalnik je ne poskuša znova
+            # in ne šteje kot izpad karte (pri oddaljeni karti je takih ploščic veliko)
+            return Response(PRAZNA_PLOSCICA, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
         glave = {"Cache-Control": "private, max-age=" + ("120" if sloj in ("promet", "nesrece") else "86400")}
         vsebina = ploscice.iz_predpomnilnika(sloj, z, x, y)
         if vsebina is None:  # v omejitev štejejo le ploščice, ki jih je treba prenesti (premikanje karte jih ne porabi)
