@@ -1,0 +1,5 @@
+Izmišljeni slovenski pogovor je sintetiziran z glasom Piper sl_SI-artur-medium.
+Model je naučil ppisljar. Posnetki v mapi so nastali iz novega scenarija.
+Model: https://huggingface.co/rhasspy/piper-voices/tree/main/sl/sl_SI/artur/medium
+Govorna zbirka: https://huggingface.co/datasets/ppisljar/artur_studio_tts/
+Licenca zbirke: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
