@@ -413,10 +413,12 @@ class Center:
         skupaj = sum(potreba.values())
         return {"potreba": potreba, "skupaj": skupaj, "vecja": skupaj > 1, "razlog": "; ".join(razlogi)}
 
-    @staticmethod
-    def najvec_dodatnih(poskodovani: int) -> int:
-        """Koliko enot sme dispečer poslati POLEG glavne: pri ≥ 2 poškodovanih vozilo na vsakega + motorist + helikopter."""
-        return poskodovani + 1 if poskodovani >= 2 else 0
+    @classmethod
+    def najvec_dodatnih(cls, poskodovani: int, prioriteta: int | None = None, vrsta: str | None = None) -> int:
+        """Koliko enot sme dispečer poslati POLEG glavne: pri ≥ 2 poškodovanih vozilo na vsakega + motorist + helikopter;
+        nikoli manj, kot jih predlaga AI (npr. prometna nesreča s P1: še motorist)."""
+        po_stevilu = poskodovani + 1 if poskodovani >= 2 else 0
+        return max(po_stevilu, cls.potrebne_enote(poskodovani, prioriteta, vrsta)["skupaj"] - 1)
 
     def _predlagaj_dodatne(self, klic_id: str) -> dict | None:
         """Pri večji nesreči AI predlaga še dodatne enote (dispečer potrdi, uredi ali zavrne)."""
@@ -623,7 +625,7 @@ class Center:
             raise NapakaStoritve("Dodatne enote niso na voljo: " + ", ".join(neznane), 422)
         if dodatne:
             n_posk = int(self._vrednost(klic_id, "stevilo_poskodovanih")[0] or 0)
-            najvec = self.najvec_dodatnih(n_posk)
+            najvec = self.najvec_dodatnih(n_posk, self._vrednost(klic_id, "prioriteta")[0], self._vrednost(klic_id, "vrsta_dogodka")[0])
             if len(dodatne) > najvec:
                 raise NapakaStoritve(f"Za {n_posk} poškodovanih je dovoljenih največ {najvec} dodatnih enot – "
                                      "popravite število poškodovanih ali dodatne enote.", 422)
