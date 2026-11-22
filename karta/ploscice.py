@@ -17,6 +17,8 @@ import time
 
 import httpx
 
+from usmerjanje.ponudniki import vrsta_omejitve
+
 dnevnik = logging.getLogger("karta")
 
 SLOJI = {
@@ -50,7 +52,8 @@ class Ploscice:
         self.izklop_do: dict[str, float] = {}
         # do ponudnika: največ `hkrati` zahtevkov naenkrat in `qps` na sekundo (sicer ponudnik vrne 429)
         self._hkrati = hkrati or int(os.environ.get("AID_PLOSCICE_HKRATI", 6))
-        self._razmik = 1.0 / float(qps or os.environ.get("AID_PLOSCICE_QPS", 20))
+        self._razmik = self._osnovni_razmik = 1.0 / float(qps or os.environ.get("AID_PLOSCICE_QPS", 20))
+        self._zadnja_omejitev = 0.0
         self._mesta: asyncio.Semaphore | None = None
         self._naslednji = 0.0
         self._v_teku: dict[tuple, asyncio.Future] = {}  # isto ploščico zahteva več odjemalcev -> en klic
@@ -123,10 +126,16 @@ class Ploscice:
                 r = await self.http.get(url.format(z=z, x=x, y=y), params={"key": kljuc(), "tileSize": 256})
             except httpx.HTTPError as e:
                 return self._napaka(k, f"{type(e).__name__}")
-        if r.status_code == 429 or (r.status_code == 403 and "rate" in r.text.lower()[:500]):
+        omejitev = vrsta_omejitve(r)
+        if omejitev:
+            # preveč zahtevkov ni izpad: premor za vse sloje in počasnejše pošiljanje (ne izklop sloja)
             self.stevec["omejitev"] += 1
-            self._omejen_do = time.time() + 2.0  # kratek premor za vse sloje; ne šteje kot izpad
-            dnevnik.warning("ponudnik ploščic omejuje (%s) – 2 s premora", r.status_code)
+            premor = 2.0 if omejitev == "qps" else 60.0
+            self._omejen_do = time.time() + premor
+            self._razmik = min(0.5, max(self._razmik, 0.05) * 2)  # upočasni (najmanj 2 zahtevka/s)
+            self._zadnja_omejitev = time.time()
+            dnevnik.warning("ponudnik ploščic omejuje (%s, %s) – %d s premora, %.1f zahtevkov/s",
+                            r.status_code, omejitev, premor, 1 / self._razmik)
             stara = self._stara(k)
             if stara is not None:
                 return stara
@@ -137,6 +146,8 @@ class Ploscice:
             return self._napaka(k, f"HTTP {r.status_code}")
         self.napake[sloj] = 0
         self.stevec["ponudnik"] += 1
+        if self._razmik > self._osnovni_razmik and time.time() - self._zadnja_omejitev > 10:
+            self._razmik = max(self._osnovni_razmik, self._razmik * 0.8)  # po 10 s brez omejitve spet hitreje
         self._predpomnilnik[k] = (time.time() + ttl, r.content)
         self._predpomnilnik.move_to_end(k)
         while len(self._predpomnilnik) > self._najvec:

@@ -1,4 +1,5 @@
 """Posrednik ploščic: ključ ostane na strežniku, brez imena ponudnika, rezerva."""
+import pytest
 import httpx
 from fastapi.testclient import TestClient
 
@@ -138,3 +139,36 @@ def test_napake_streznika_sloj_izklopijo_sele_po_vec_zaporednih(monkeypatch):
     except Exception:  # noqa: BLE001
         pass
     assert not p.na_voljo("karta") and p.na_voljo("promet")  # 8. zaporedna: izklop le tega sloja (30 s)
+
+
+@pytest.mark.parametrize("telo,vrsta", [("<h1>Developer Over Qps</h1>", "qps"), ("<h1>Developer Over Rate</h1>", "kvota")])
+def test_tomtom_403_over_qps_ni_izpad(monkeypatch, telo, vrsta):
+    """TomTom ob preveč zahtevkih vrne 403 »Developer Over Qps« – to ni manjkajoče dovoljenje: sloj ostane, strežnik upočasni."""
+    import asyncio
+
+    from karta.ploscice import Omejitev
+    from usmerjanje.ponudniki import vrsta_omejitve
+    monkeypatch.setenv("TOMTOM_MAP_KEY", "k")
+    p = Ploscice(odjemalec=odjemalec(lambda req: httpx.Response(403, text=telo)), qps=1000)
+    razmik = p._razmik
+    with pytest.raises(Omejitev):
+        asyncio.run(p.ploscica("karta", 12, 2218, 1453))
+    assert p.na_voljo("karta") and p._razmik > razmik
+    assert vrsta_omejitve(httpx.Response(403, text=telo)) == vrsta
+    assert vrsta_omejitve(httpx.Response(403, text="<h1>Developer Inactive</h1>")) is None  # pravo manjkajoče dovoljenje
+    assert vrsta_omejitve(httpx.Response(429)) == "qps"
+
+
+def test_oddaljena_karta_ploscice_zunaj_obmocja_brez_napak(monkeypatch):
+    """Oddaljena karta: veliko ploščic zunaj Slovenije -> prazne ploščice (200), ne štejejo v omejitev in ne kličejo ponudnika."""
+    monkeypatch.setenv("TOMTOM_MAP_KEY", "k")
+    klici = []
+
+    def h(req):
+        klici.append(1)
+        return httpx.Response(200, content=PNG, headers={"content-type": "image/png"})
+
+    with TestClient(app_z()) as cl:
+        cl.app.state.ploscice._odjemalec = odjemalec(h)
+        kode = {cl.get(f"/ploscice/karta/7/{x}/{y}.png").status_code for x in range(0, 128, 4) for y in range(0, 128, 4)}
+        assert kode == {200} and klici == []
