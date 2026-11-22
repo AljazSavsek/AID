@@ -22,8 +22,8 @@ def cl():
 
 
 def test_vsi_pogovori_v_json_razlicne_stevilke():
-    assert len(KLICI) >= 3 and len({k["stevilka"] for k in KLICI}) == len(KLICI)
-    assert sum(1 for k in KLICI if k.get("posnetki")) == 1
+    assert len(KLICI) >= 2 and len({k["stevilka"] for k in KLICI}) == len(KLICI)
+    assert sum(1 for k in KLICI if k.get("posnetki")) <= 1
     for k in KLICI:
         for s in k.get("segmenti", []):
             assert s["govorec"] in ("dispecer", "klicatelj") and s["do_s"] >= s["od_s"] and s["besedilo"].strip()
@@ -31,17 +31,18 @@ def test_vsi_pogovori_v_json_razlicne_stevilke():
 
 def test_vrsta_po_vrsti_in_naslednji_po_koncu(cl):
     q = cl.get("/cakajoci").json()
-    assert [x["stevilka"] for x in q] == [k["stevilka"] for k in KLICI] and q[0]["zvok"] and not q[1]["zvok"]
-    # drugi pogovor (besedilni) za svojo številko: segmenti iz datoteke
-    k = cl.post("/demo/klic", json={"hitrost": 1000, "cakajoci_id": q[1]["id"]}).json()
-    assert k["stevilka"] == KLICI[1]["stevilka"]
+    assert [x["stevilka"] for x in q] == [k["stevilka"] for k in KLICI]
+    # prvi besedilni pogovor za svojo številko: segmenti iz datoteke
+    i = next(j for j, x in enumerate(q) if not x["zvok"])
+    k = cl.post("/demo/klic", json={"hitrost": 1000, "cakajoci_id": q[i]["id"]}).json()
+    assert k["stevilka"] == KLICI[i]["stevilka"]
     cl.portal.call(cl.center.pocakaj_ozadje)
     seg = cl.get(f"/klic/{k['id']}").json()["segmenti"]
-    assert [s["besedilo"] for s in seg] == [s["besedilo"] for s in KLICI[1]["segmenti"]]
+    assert [s["besedilo"] for s in seg] == [s["besedilo"] for s in KLICI[i]["segmenti"]]
     assert any(p["polje"] == "vrsta_dogodka" for p in cl.get(f"/klic/{k['id']}/predlogi").json())  # AI dela iz pogovora
     cl.post(f"/klic/{k['id']}/koncaj")
     ostali = cl.get("/cakajoci").json()
-    assert [x["stevilka"] for x in ostali] == [KLICI[0]["stevilka"], KLICI[2]["stevilka"]]
+    assert [x["stevilka"] for x in ostali] == [x["stevilka"] for j, x in enumerate(KLICI) if j != i]
 
 
 def test_ko_so_vsi_odigrani_se_vrsta_napolni(cl):
@@ -66,3 +67,7 @@ def test_konec_klica_ustavi_predvajanje(cl):
     cl.post(f"/klic/{k['id']}/koncaj")
     cl.portal.call(cl.center.pocakaj_ozadje)
     assert cl.get(f"/klic/{k['id']}").json()["segmenti"] == []
+
+
+def test_brez_zvocnega_klica_prvi_v_vrsti_je_besedilni():
+    assert not any(k.get("posnetki") for k in KLICI) and KLICI[0]["stevilka"] == "+386 41 555 238"
