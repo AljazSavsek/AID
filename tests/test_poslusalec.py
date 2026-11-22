@@ -7,7 +7,7 @@ from poslusalec.ai import Poslusalec, Pravila
 from poslusalec.shema import NeveljavenIzhod, validiraj
 
 SEGMENTI = [dict(s, id=f"s{i + 1}") for i, s in enumerate(
-    json.loads((Path(__file__).parent.parent / "demo" / "klic1.json").read_text(encoding="utf-8"))["segmenti"])]
+    json.loads((Path(__file__).parent / "podatki" / "klic1.json").read_text(encoding="utf-8"))["segmenti"])]
 
 
 class LazenLLM:

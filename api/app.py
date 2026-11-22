@@ -27,7 +27,6 @@ from voznik.avtentikacija import NapakaPrijave
 from voznik.ekipa import NapakaEkipe
 from voznik.naloge import NapakaStanja
 from voznik.vmesnik import ustvari_usmerjevalnik
-from zajem.simulator import nalozi_klic, predvajaj
 
 from voznik.omejitve import Omejevalnik
 
@@ -320,6 +319,9 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
             if p:
                 c.potrdi_plan(p["id"], "sistem (začetek izmene)")
         if ozadje:
+            from zajem import zvok
+            zvok.objava = c.objava
+            zvok.prednalozi()  # Whisper se naloži ob zagonu strežnika, ne šele ob prvem klicu
             stanje["naloge"] = [asyncio.ensure_future(c.usmerjanje.zanka_zdravja(30)),
                                 asyncio.ensure_future(_izvoz(c)),
                                 asyncio.ensure_future(_signal(c)),
@@ -561,49 +563,40 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
                         headers={"Cache-Control": "public, max-age=" + ("120" if sloj in ("promet", "nesrece") else "86400")})
 
     # ---------- demo ----------
-    @app.post("/demo/klic")
-    async def demo_klic(v: DemoKlic, u: str = Depends(uporabnik)):
-        """Sprejme prvi čakajoči klic in predvaja demo/klic1.json (namesto VoIP + STT)."""
-        c = C()
-        q = next((q for q in c.cakajoci if q.get("demo") == "klic1"), None)
-        k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 41 555 238")
-        segmenti = nalozi_klic()["segmenti"]
-
-        async def poslji(seg):
-            with contextlib.suppress(NapakaStoritve):
-                c.dodaj_segment(k["id"], seg["govorec"], seg["besedilo"], seg["od_s"], seg["do_s"])
-
-        c._v_ozadju(predvajaj(segmenti, poslji, max(0.25, v.hitrost),
-                              prekini=lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"))
-        return k
-
     @app.post("/demo/klic-zvok")
     async def demo_klic_zvok(v: DemoKlic, u: str = Depends(uporabnik)):
-        """Zvočni klic: posnetki poslusalec/zvok -> prepis govora (Whisper ali shranjen prepis) -> AI predlogi."""
+        """Zvočni klic: posnetki poslusalec/zvok -> Whisper -> segmenti klica -> AI predlogi. Brez vnaprej določenega besedila."""
         from poslusalec import poslusalec as pp
-        from zajem.zvok import PrepisNiNaVoljo, predvajaj_zvocni_klic, whisper_na_voljo
+        from zajem import zvok
         c = C()
         try:
             pp.posnetki_klica()
-            if not whisper_na_voljo():
-                pp.ShranjenPrepis()  # rezerva mora obstajati, sicer klica ne začnemo
         except FileNotFoundError:
-            raise HTTPException(503, "Prepis govora ni na voljo: namestite faster-whisper (pip install -r requirements-zvok.txt) "
-                                     "ali uporabite besedilni demo klic.")
+            raise HTTPException(503, "Manjkajo posnetki klica (poslusalec/zvok/*.wav).")
+        if not zvok.whisper_na_voljo():
+            raise HTTPException(503, zvok.razlog_ni_whisperja())
+        if zvok.MODEL["stanje"] == "napaka" and not zvok.lahko_poskusi_znova():
+            raise HTTPException(503, "Prepis govora ni na voljo: " + zvok.MODEL["razlog"])
         q = next((q for q in c.cakajoci if q.get("demo") == "zvok"), None)
         k = c.zacni_klic(u, cakajoci_id=q["id"] if q else None, stevilka=None if q else "+386 51 318 774")
         konec = lambda: (c.db.beri("klic", k["id"]) or {}).get("stanje") != "v_teku"  # noqa: E731
 
         async def tek():
             try:
-                await predvajaj_zvocni_klic(c, k["id"], max(0.25, v.hitrost), prekini=konec)
-            except PrepisNiNaVoljo as e:
-                c.objava.objavi("opozorilo", {"vrsta": "prepis", "sporocilo": str(e)})
+                await zvok.predvajaj_zvocni_klic(c, k["id"], max(0.25, v.hitrost), prekini=konec)
+            except zvok.PrepisNiNaVoljo as e:
+                c.objava.objavi("prepis_stanje", {"klic_id": k["id"], "stanje": "napaka", "sporocilo": str(e)})
+                c.objava.objavi("opozorilo", {"vrsta": "prepis", "sporocilo": str(e) + " Nadaljujte z ročnim zapisom."})
             except Exception as e:  # noqa: BLE001 – klic ostane odprt za ročni zapis
                 logging.getLogger("prepis").exception("zvočni klic")
                 c.objava.objavi("opozorilo", {"vrsta": "prepis", "sporocilo": f"Prepis govora se je ustavil ({type(e).__name__}) – nadaljujte z ročnim zapisom."})
         c._v_ozadju(tek())
         return k
+
+    @app.get("/prepis/stanje")
+    async def prepis_stanje():
+        from zajem import zvok
+        return zvok.stanje_modela()
 
     @app.post("/demo/izpad")
     async def demo_izpad(ai: bool = False):

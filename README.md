@@ -92,8 +92,9 @@ prepisu, AI poslušalec iz njega pripravi predloge.
 pip install -r requirements-zvok.txt
 ```
 
-Prvi zagon prenese model Whisper `small` (~460 MB, potreben internet). Brez faster-whisper ali modela aplikacija
-uporabi zadnji resnični prepis istih posnetkov in to pokaže v »Stanje sistema → Prepis govora«. Zvok ostane na
+Besedilo klica prihaja **samo iz Whisperja** – v aplikaciji ni vnaprej določenega besedila. Strežnik naloži model ob
+zagonu (prvič ga prenese, `small` ~460 MB, potreben internet); stanje je v »Stanje sistema → Prepis govora«. Če Whisper
+ni na voljo, aplikacija pokaže razlog, klic pa dispečer zapisuje ročno. Preverjanje: `python diagnoza_zvok.py`. Zvok ostane na
 strežniku; za predvajanje na tem računalniku nastavite `AID_PREDVAJAJ_ZVOK=1`, model z `AID_WHISPER_MODEL`.
 Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows) ali `poslusalec/zazeni.sh` (Linux/macOS).
 
@@ -176,7 +177,7 @@ Voznik vidi **samo naloge iz potrjenega plana in podatke, ki jih je potrdil disp
 | `geokodiranje/` | GURS → lokalni register → Nominatim → klik na karto |
 | `usmerjanje/` | skrit servis poti: hedging, varovalka, health check, predpomnilnik, smiselnost, helikopter |
 | `planer/` | OR-Tools VRP in dogodki plana |
-| `prepis/`, `zajem/` | STT z rezervo, simulator klica |
+| `poslusalec/`, `zajem/` | prepis govora (Whisper), AI poslušalec, zvočni klic v aplikaciji, simulator vozil |
 | `static/` | vmesnik (HTML/JS + Leaflet, brez build koraka) |
 | `demo/` | scenarij (UKC, 4 vozila, 2 motorista, helikopter, 8 nalog), klic, register naslovov |
 

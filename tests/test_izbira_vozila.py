@@ -9,7 +9,7 @@ from api.app import ustvari_app
 from api.storitev import Center
 from planer.vrp import Nastavitve
 
-SEG = json.loads((Path(__file__).parent.parent / "demo" / "klic1.json").read_text(encoding="utf-8"))["segmenti"]
+SEG = json.loads((Path(__file__).parent / "podatki" / "klic1.json").read_text(encoding="utf-8"))["segmenti"]
 
 
 @pytest.fixture()
