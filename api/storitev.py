@@ -107,6 +107,18 @@ class Center:
     def nalozi_scenarij(self, pot) -> None:
         sc = json.loads(Path(pot).read_text(encoding="utf-8"))
         t0 = time.time()
+        v_bazi = {e["id"] for e in self.db.vsi("enota")}
+        v_scenariju = {e["id"] for e in sc["enote"]}
+        if v_bazi and v_bazi != v_scenariju and os.environ.get("AID_SAMODEJNA_PONASTAVITEV", "1") == "1":
+            # demo: enote v scenariju so se spremenile (npr. odstranjen MOT-1) -> nova izmena iz scenarija.
+            # Revizijska sled ostane (vpis o ponastavitvi), drugo stanje (klici, naloge, plani, seje) se začne znova.
+            tabele = [r["name"] for r in self.db.izvedi("SELECT name FROM sqlite_master WHERE type='table'")
+                      if r["name"] not in ("revizija", "sqlite_sequence")]
+            for t in tabele:
+                self.db.izvedi(f'DELETE FROM "{t}"')
+            self.db.revizija(SISTEM, "Scenarij", "demo", "ponastavitev", sorted(v_bazi), sorted(v_scenariju))
+            dnevnik.warning("Enote v scenariju so se spremenile (%s -> %s) – stanje ponastavljeno iz scenarija.",
+                            ", ".join(sorted(v_bazi - v_scenariju)) or "-", ", ".join(sorted(v_scenariju - v_bazi)) or "-")
         self.cakajoci = [dict(k, id=f"q{i + 1}", prispel=t0 - 20 + 6 * i) for i, k in enumerate(sc.get("cakajoci_klici", []))]
         if os.environ.get("AID_VOZNIK_DEMO_KODE") != "0":  # demo kode so v repozitoriju – v produkciji izklopi
             self.avtentikacija.nalozi_demo_kode(sc.get("kode_voznikov", {}))
