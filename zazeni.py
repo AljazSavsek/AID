@@ -107,7 +107,14 @@ def main() -> int:
     ap.add_argument("--javno", action="store_true", help="poslušaj na vseh vmesnikih (telefon v istem omrežju)")
     ap.add_argument("--vozila", default="", help="simulirana vozila, npr. RV-1,RV-4 (zajem/vozilo_sim.py)")
     ap.add_argument("--pospesek", type=float, default=3.0, help="pospešek simulatorja vozil")
+    ap.add_argument("--ponastavi", action="store_true",
+                    help="začni znova iz demo/scenarij.json (izbriše podatki/aid.sqlite; heartbeati ostanejo)")
     a = ap.parse_args()
+    if a.ponastavi:
+        baza = Path(os.environ.get("AID_DB") or KOREN / "podatki" / "aid.sqlite")
+        for f in (baza, baza.with_name(baza.name + "-wal"), baza.with_name(baza.name + "-shm")):
+            f.unlink(missing_ok=True)
+        print(f"↺ Stanje ponastavljeno – nova izmena iz demo/scenarij.json ({baza.name} izbrisana).")
 
     host = "0.0.0.0" if a.javno else "127.0.0.1"
     url = f"http://localhost:{a.port}"

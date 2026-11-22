@@ -32,7 +32,9 @@ def vozilo(tr, eid, **kw):
 
 def test_celoten_krog_brez_naprave(okolje):
     cl, c, tr = okolje
-    eid = "RV-2"
+    # reševalno vozilo z največ koraki v začetnem planu (prevoz pacienta: naložen, dostavljeno)
+    eid = max((e for e in c.plan_aktiven()["koraki_po_enoti"] if e.startswith("RV") and not c.db.beri("enota", e).get("tovor")),
+              key=lambda e: len(c.plan_aktiven()["koraki_po_enoti"][e]))
     koraki = [(k["naloga_id"], k["akcija"]) for k in c.plan_aktiven()["koraki_po_enoti"][eid]]
     v = vozilo(tr, eid)
     cl.portal.call(v.tek, 30, True)

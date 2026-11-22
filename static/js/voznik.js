@@ -138,7 +138,16 @@
     V.planId = n.plan && n.plan.id;
     const prejsnjaPot = V.n && V.n.pot ? V.n.pot.izracunano : null;
     const prejsnjaNaloga = V.n ? (V.n.koraki.find((k) => k.trenutni) || {}).naloga_id : null;
+    const prviPrenos = !V.n;
     V.n = n;
+    const zo = n.zadnje_obvestilo;
+    if (prviPrenos && zo && zo.stanje === "obvescen" && zo.razlike && (zo.razlike.odstranjeni || []).length
+        && Date.now() / 1000 - zo.ustvarjeno < 900 && AID.beri("aid_videno_obv", "") !== zo.id) {
+      // naloga je bila predana drugi enoti, ko naprava ni bila povezana (enoti ni ostala nobena naloga)
+      AID.pisi("aid_videno_obv", zo.id);
+      const ids = [...new Set(zo.razlike.odstranjeni.map((x) => x[0]))].join(", ");
+      pokaziOkno("Naloga predana drugi enoti", `Dispečer je nalogo ${ids} dodelil drugemu vozilu. Ostanite na voljo in sledite navodilom centra.`);
+    }
     if (prejsnjaNaloga && !n.koraki.some((k) => k.naloga_id === prejsnjaNaloga)) {
       // dispečer je nalogo prerazporedil (npr. vozilo je obtičalo) -> jasno obvestilo, ne le tiha sprememba
       dodajObvestilo(`Nalogo ${prejsnjaNaloga} je prevzela druga enota (dispečer)`, "center");

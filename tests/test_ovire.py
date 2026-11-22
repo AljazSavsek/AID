@@ -42,8 +42,12 @@ def voznik(cl, eid):
 
 
 def enota_na_poti(cl):
+    """Reševalno vozilo, ki res vozi do prvega koraka (ne stoji že na mestu prevzema)."""
+    from usmerjanje.ponudniki import zracna_razdalja_m
     plan = cl.get("/plan/aktiven").json()
-    eid = next(e for e, ks in plan["koraki_po_enoti"].items() if ks and e.startswith("RV") and e != "RV-1")
+    enote = {e["id"]: e for e in cl.get("/enote").json()}
+    eid = next(e for e, ks in plan["koraki_po_enoti"].items() if ks and e.startswith("RV") and e != "RV-1"
+               and zracna_razdalja_m((enote[e]["lat"], enote[e]["lon"]), (ks[0]["lat"], ks[0]["lon"])) > 500)
     h = voznik(cl, eid)
     n = cl.get("/voznik/naloga", headers=h).json()
     assert n["pot"]
@@ -92,7 +96,7 @@ def test_obtical_druga_enota(cl):
     hn = voznik(cl, nova)
     assert any(k["naloga_id"] == nid for k in cl.get("/voznik/naloga", headers=hn).json()["koraki"])
     stara = cl.get("/voznik/naloga", headers=h).json()
-    assert any([nid, "prevzem"] in o["razlike"]["odstranjeni"] for o in stara["obvestila"])
+    assert any([nid, "prevzem"] in o["razlike"]["odstranjeni"] for o in stara["obvestila"] + [stara["zadnje_obvestilo"]])
     assert any(x["akcija"] == "prerazporedi" for x in cl.get("/revizija", params={"objekt_id": nid}).json())
 
 

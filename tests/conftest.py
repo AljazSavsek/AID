@@ -55,3 +55,17 @@ def _heartbeat_v_zacasno_mapo(tmp_path_factory, monkeypatch):
     """Heartbeati iz testov ne smejo v podatki/heartbeat."""
     if not os.environ.get("AID_HEARTBEAT_MAPA") or "pytest" not in os.environ["AID_HEARTBEAT_MAPA"]:
         monkeypatch.setenv("AID_HEARTBEAT_MAPA", str(tmp_path_factory.mktemp("heartbeat")))
+
+
+def nujna_za_enoto(cl, enota_id: str, lat: float = 46.0395, lon: float = 14.493) -> str:
+    """Dodeli enoti novo nujno vožnjo (zavezujoče, kot ob izbiri dispečerja) in potrdi plan. Vrne id naloge."""
+    import time
+
+    from dnevnik import model as M
+    c = cl.center
+    n = M.naloga("nujna_voznja", {"lat": lat, "lon": lon, "naslov": "test"}, 2, okno_od=time.time(), okno_do=time.time() + 900, opis="test")
+    n.update(dodeljena_enota=enota_id, zelena_enota=enota_id)
+    plan = cl.portal.call(lambda: c.uveljavi_dogodek(M.dogodek("nujna_naloga", {"naloga": n}, "klic", "sprejeto"), "M. Novak",
+                                                     zelena_enota=(n["id"], enota_id)))
+    c.potrdi_plan(plan["id"], "M. Novak")
+    return n["id"]

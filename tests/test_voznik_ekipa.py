@@ -144,7 +144,10 @@ def test_prevoz_z_nujne_voznje(cl):
 
 def test_motorist_ne_predlaga_prevoza(cl):
     c = cl.center
-    eid = next(e for e, ks in c.plan_aktiven()["koraki_po_enoti"].items() if ks and ks[0]["nujna"] and e.startswith("MOT"))
+    from conftest import nujna_za_enoto
+    eid = next(e["id"] for e in c.enote() if e["tip"] == "motorist")
+    if not any(ks and ks[0]["nujna"] for e, ks in c.plan_aktiven()["koraki_po_enoti"].items() if e == eid):
+        nujna_za_enoto(cl, eid)
     H = prijava(cl, eid)
     for st in ("prejeto", "na_poti", "na_prizoriscu"):
         stanje(cl, H, st)
