@@ -90,6 +90,7 @@
   "meni.zapri": "ZAPRI",
   "sporocilo.od_dispecerja": "Dispečer: {besedilo}",
   "sporocilo.novo": "Novo sporočilo dispečerja",
+  "pot.nova": "NOVA POT – centrala je izračunala drugo pot",
   "sporocilo.besedilo": "Besedilo sporočila",
   "sporocilo.poslji": "POŠLJI",
   "sporocilo.med_voznjo": "Med vožnjo so na voljo samo hitra sporočila.",

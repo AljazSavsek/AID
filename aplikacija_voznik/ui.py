@@ -15,6 +15,7 @@ import flet as ft
 
 from jedro import i18n
 from jedro.i18n import t
+from jedro.heartbeat import Heartbeat
 from jedro.navigacija import stanje_navigacije
 from jedro.odjemalec import NiPovezave, Odjavljen, Odjemalec, Seja, Zavrnjeno
 from jedro.posiljalec import Posiljalec
@@ -123,6 +124,8 @@ class AplikacijaVoznika:
         self.page.run_task(self.sinh.tek)
         self.page.run_task(self._zanka_opozoril)
         self.page.run_task(self._zanka_baterije)
+        self.heartbeat = Heartbeat(self.odjemalec, lambda: (getattr(self, "zadnji_fiks", None), self.naloga))
+        self.page.run_task(self.heartbeat.tek)  # vsakih 30 s: hitrost, lokacija, pot -> centrala
         self._izrisi()
 
     def _ob_odjavi(self) -> None:
@@ -136,6 +139,8 @@ class AplikacijaVoznika:
             self.posiljalec.ustavi()
         if self.sinh:
             self.sinh.ustavi()
+        if getattr(self, "heartbeat", None):
+            self.heartbeat.ustavi()
         self.page.run_task(self.naprava.zaslon_prizgan, False)
 
     async def _odjava(self, _=None) -> None:
@@ -190,6 +195,9 @@ class AplikacijaVoznika:
         prej_predlogi = {p["id"]: p["stanje"] for p in stara.get("predlogi", [])}
         if (n.get("pot") or {}).get("izracunano") != (stara.get("pot") or {}).get("izracunano") and n.get("pot") and stara:
             self._pot_cas = n["pot"]["izracunano"]
+            pr = n["pot"].get("preusmeritev")
+            if pr:  # centrala je ob zastoju/oviri izračunala drugo pot
+                await self.naprava.opozori(t("pot.nova"), pr.get("opis") or pr.get("razlog") or "", not self.v_ospredju)
         self.naloga = n
         if stara:
             nova_sp = [m for m in n.get("sporocila", []) if m["smer"] == "od_dispecerja" and m["id"] not in prej_sporocila]

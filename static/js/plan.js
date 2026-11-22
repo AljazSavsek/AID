@@ -7,7 +7,8 @@
   const AID = window.AID;
   const { esc } = AID;
   const $ = (id) => document.getElementById(id);
-  const P = { enote: [], naloge: [], centri: [], aktiven: null, predlog: null, prikazan: null, alternative: [], altIndeks: 0 };
+  const P = { enote: [], naloge: [], centri: [], aktiven: null, predlog: null, prikazan: null, alternative: [], altIndeks: 0,
+    hb: {}, preusmeritve: {} };
 
   const TIP = { vozilo: "Reševalno vozilo", motorist: "Motorist", helikopter: "Helikopter" };
   const STANJE = { prosto: "prosto", na_nalogi: "na nalogi", okvara: "okvara" };
@@ -38,7 +39,7 @@
       const stikalo = new Stikalo({ position: "topright" }).addTo(karta);
       izid.onIzpad = () => stikalo.remove();
     });
-    ["centri", "naloge", "aktiven", "predlog", "enote"].forEach((k) => (sloji[k] = L.layerGroup().addTo(karta)));
+    ["centri", "naloge", "aktiven", "predlog", "preusmeritve", "enote"].forEach((k) => (sloji[k] = L.layerGroup().addTo(karta)));
   }
   /* ---------- živi položaj in signal (GPS z naprave voznika) ---------- */
   const SIGNAL = { v_zivo: "GPS", zakasnjeno: "GPS zakasnjen", ni_signala: "ni signala", brez_gps: "brez GPS", neznano: "neznano" };
@@ -61,6 +62,17 @@
   }
   /* voznik: prijava, faza trenutnega koraka, potrditev prejema plana */
   const FAZA = { prejeto: "prejeto", na_poti: "na poti", na_prizoriscu: "na prizorišču" };
+  /* heartbeat voznika (vsakih 30 s): hitrost, preostanek poti, starost */
+  function hbHtml(eid) {
+    const h = P.hb[eid];
+    if (!h) return "";
+    const starost = AID.streznikZdaj() - h.ts;
+    const deli = [`♥ ${starostBesedilo(starost)}`, h.hitrost_kmh != null ? `${Math.round(h.hitrost_kmh)} km/h` : "",
+      h.preostalo_m != null ? `še ${(h.preostalo_m / 1000).toFixed(1)} km` : "", h.preostalo_s != null ? `~${Math.max(1, Math.round(h.preostalo_s / 60))} min` : ""];
+    const pr = P.preusmeritve[eid];
+    return `<span class="tip st-hb ${starost > 75 ? "izpad" : ""}" title="Heartbeat voznika (vsakih 30 s)">${esc(deli.filter(Boolean).join(" · "))}</span>`
+      + (pr ? `<span class="tip st-preusmeritev">↪ nova pot: ${esc(pr.opis)}</span>` : "");
+  }
   function opisVoznika(e) {
     const v = e.voznik;
     if (!v) return "";
@@ -146,6 +158,10 @@
     poti(P.aktiven, sloji.aktiven, { color: "#1D2228", weight: 3, opacity: 0.55 });
     if (P.prikazan) poti(P.prikazan, sloji.predlog, { color: "#8A1525", weight: 4, dashArray: "8 6" });
     if (manjkajo.length) naloziGeometrije(manjkajo);
+    Object.values(P.preusmeritve).forEach((r) => {
+      if (r.geometrija && r.geometrija.length > 1) L.polyline(r.geometrija, { color: "#1A7F37", weight: 4, dashArray: "2 8", opacity: 0.9 })
+        .bindTooltip(`${esc(r.enota_id)} · nova pot (${esc(r.razlog)}): ${esc(r.opis)}`, { sticky: true }).addTo(sloji.preusmeritve);
+    });
     (AID.ovire ? AID.ovire.ovire : []).forEach((o) => L.circle([o.lat, o.lon], { radius: o.polmer_m, color: "#8A1525", weight: 2, fillColor: "#8A1525", fillOpacity: 0.3 })
       .bindTooltip(`⛔ ${esc(o.vrsta)}${o.opis ? " – " + esc(o.opis) : ""}`).addTo(sloji.enote));
     if (!izrisiKarto.prilagojeno) {
@@ -164,7 +180,7 @@
       return `<li data-enota="${esc(e.id)}"><span class="ime">${esc(e.id)}</span>${zamik || `<span class="st-enote ${e.stanje}">${STANJE[e.stanje] || e.stanje}</span>`}
         <span class="tip">${TIP[e.tip] || e.tip}${e.tovor && e.tovor.length ? " · tovor: " + e.tovor.map((t) => esc(t.naloga_id)).join(", ") : ""}</span>
         <span class="st-signal ${sig.signal}" data-signal-enote="${esc(e.id)}">${esc(opisSignala(e))}</span>
-        <span class="tip st-voznik">${esc(opisVoznika(e))}</span></li>`;
+        <span class="tip st-voznik">${esc(opisVoznika(e))}</span>${hbHtml(e.id)}</li>`;
     }).join("");
   }
   $("seznam-enot").onclick = (e) => {
@@ -312,6 +328,8 @@
   async function osvezi() {
     try {
       [P.enote, P.naloge, P.centri, P.aktiven] = await Promise.all([AID.api("/enote"), AID.api("/naloge"), AID.api("/centri"), AID.api("/plan/aktiven")]);
+      AID.api("/heartbeat").then((v) => { v.forEach((z) => { P.hb[z.enota_id] = { enota_id: z.enota_id, ts: z.ts, hitrost_kmh: z.hitrost_kmh,
+        preostalo_m: z.pot.preostalo_m, preostalo_s: z.pot.preostalo_s }; }); izrisiEnote(); }).catch(() => {});
       AID.pisi("aid_plan", { enote: P.enote, naloge: P.naloge, centri: P.centri, aktiven: P.aktiven });
     } catch (_) {
       Object.assign(P, AID.beri("aid_plan", {})); // zadnje znano stanje
@@ -328,6 +346,10 @@
   AID.na("plan_aktiven", (p) => { P.aktiven = p; if (P.predlog && (P.predlog.id === p.id || P.alternative.some((a) => a.id === p.id))) nastaviPredlog(null); else izrisiVse(); });
   AID.na("plan_zavrnjen", (p) => { if (P.predlog && P.predlog.id === p.id) nastaviPredlog(null); });
   AID.na("enote", (e) => { P.enote = e; izrisiVse(); });
+  AID.na("heartbeat", (h) => { P.hb[h.enota_id] = h; izrisiEnote(); });
+  AID.na("preusmeritev", (r) => { P.preusmeritve[r.enota_id] = r; izrisiVse(); });
+  AID.na("voznik_stanje", (x) => { if (x && x.enota_id && P.preusmeritve[x.enota_id] && x.stanje !== "na_poti") { delete P.preusmeritve[x.enota_id]; izrisiVse(); } });
+  setInterval(() => { if (Object.keys(P.hb).length) izrisiEnote(); }, 5000); // starost heartbeata
   (AID.naOvire = AID.naOvire || []).push(() => izrisiKarto());
   /* sporočila voznikov: stanja, potrditve, obvestila -> sveže enote/naloge */
   const osveziEnote = () => AID.api("/enote").then((e) => { P.enote = e; izrisiVse(); }).catch(() => {});

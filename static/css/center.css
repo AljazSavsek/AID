@@ -238,3 +238,6 @@
 
 .vrsta-klicev li.izbirno { cursor: pointer; }
 .vrsta-klicev li.izbirno:hover { border-color: var(--rdeca); }
+.izbira-enot { display: grid; gap: 4px; }
+.izbira-enot label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.izbira-enot .tip-vozila { margin-left: auto; }

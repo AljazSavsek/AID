@@ -30,6 +30,7 @@ KOREN = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(KOREN / "aplikacija_voznik"))
 
 from jedro.gps import SimuliranVir  # noqa: E402
+from jedro.heartbeat import Heartbeat  # noqa: E402
 from jedro.navigacija import razdalja_m  # noqa: E402
 from jedro.odjemalec import NiPovezave, Odjavljen, Odjemalec, Seja, Zavrnjeno  # noqa: E402
 from jedro.posiljalec import Posiljalec  # noqa: E402
@@ -147,6 +148,8 @@ class SimVozilo:
         n = await self.o.naloga()
         self.gps = SimuliranVir((n["enota"]["lat"], n["enota"]["lon"]), self.hitrost_ms, ura=self.ura)
         posiljalec = asyncio.ensure_future(self.pos.tek())
+        zadnji = {"fiks": None, "n": n}
+        self.heartbeat = Heartbeat(self.o, lambda: (zadnji["fiks"], zadnji["n"]), ura=self.ura)
         konec = self.ura() + trajanje_s if trajanje_s else None
         zadnji_fiks = 0.0
         delal = False
@@ -155,10 +158,13 @@ class SimVozilo:
                 if self.ura() - zadnji_fiks >= float(self.pos.gps.get("fiks_s", 2)):
                     dt = self.ura() - zadnji_fiks if zadnji_fiks else 0.0
                     zadnji_fiks = self.ura()
-                    self.pos.nov_fiks(self.gps.korak(min(dt, 30.0)))
+                    zadnji["fiks"] = self.gps.korak(min(dt, 30.0))
+                    self.pos.nov_fiks(zadnji["fiks"])
                     self.fiksov += 1
                 try:
-                    n = await self.o.naloga()
+                    n = zadnji["n"] = await self.o.naloga()
+                    if self.heartbeat.je_cas():  # vsakih 30 s: hitrost, lokacija, pot -> centrala
+                        await self.heartbeat.poslji()
                     delal = delal or any(x.get("trenutni") for x in n.get("koraki", []))
                     await self.korak(n)
                     if do_prostega and delal and not any(x.get("trenutni") for x in n.get("koraki", [])) and not n.get("obvestila"):

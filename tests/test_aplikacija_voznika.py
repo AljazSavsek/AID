@@ -172,3 +172,16 @@ def test_odjemalec_sporocila_in_predlogi(okolje):
     assert n["sporocila"][0]["id"] == m["id"] and n["predlogi"][-1]["tip"] == "ovira_na_cesti"
     pozeni(cl, o.prebrano, m["id"])
     assert c.ekipa.sporocila("RV-3")[0]["prebrano"]
+
+
+def test_paket_heartbeata():
+    from jedro.heartbeat import paket
+    n = {"enota": {"id": "RV-1", "lat": 46.05, "lon": 14.5},
+         "koraki": [{"naloga_id": "N-1", "akcija": "prevzem", "lat": 46.06, "lon": 14.5, "trenutni": True}],
+         "pot": {"geometrija": [[46.05, 14.5], [46.055, 14.5], [46.06, 14.5]], "cas_s": 120, "razdalja_m": 1113, "izracunano": 5.0}}
+    p = paket({"ts": 100.0, "lat": 46.052, "lon": 14.5, "hitrost": 10.0, "smer": 0.0, "natancnost": 6}, n, ura=110.0)
+    assert p["hitrost_kmh"] == 36.0 and p["lokacija"] == {"lat": 46.052, "lon": 14.5, "natancnost": 6, "smer": 0.0}
+    assert p["pot"]["naloga_id"] == "N-1" and p["pot"]["izracunano"] == 5.0 and 850 < p["pot"]["preostalo_m"] < 950
+    assert paket({"ts": 0.0, "lat": 46.05, "lon": 14.5, "hitrost": 10.0}, n, ura=1000.0)["hitrost_kmh"] == 0.0  # star fiks: stoji
+    assert paket(None, n, ura=1.0)["lokacija"] == {"lat": 46.05, "lon": 14.5}  # brez GPS: zadnji znani položaj
+    assert paket(None, None) is None

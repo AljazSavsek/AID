@@ -15,7 +15,7 @@ POTRJENA = ("sprejeto", "spremenjeno")
 POLJA_AI = (
     "vrsta_dogodka", "opis", "naslov", "orientacija", "lokacija", "stevilo_poskodovanih",
     "stanje_pacienta", "prioriteta", "potrebna_oprema", "predlagana_enota", "kontakt",
-    "vprasanja_za_klicatelja", "zaznani_dogodek_plana",
+    "vprasanja_za_klicatelja", "zaznani_dogodek_plana", "dodatne_enote",
 )
 # polja, ki jih predlaga LLM neposredno iz prepisa (lokacija pride iz geokodiranja,
 # predlagana_enota iz usmerjanja + planerja)

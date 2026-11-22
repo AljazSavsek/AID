@@ -103,6 +103,25 @@ Zvok klica se predvaja v brskalniku dispečerja (gumb »Utišaj« ga utiša), pr
 terminal (`[prepis] …`). Model izberete z `AID_WHISPER_MODEL` (npr. `base` je hitrejši).
 Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows) ali `poslusalec/zazeni.sh` (Linux/macOS).
 
+## Večja nesreča, heartbeat voznika, samodejna druga pot
+
+**Več enot pri večji nesreči.** Ko AI iz klica razbere več poškodovanih (ali prometno nesrečo s prioriteto 1), se pod
+»Vozilo za odhod« pokaže kartica **Dodatne enote (večja nesreča)** z razlogom in dokazom iz prepisa
+(npr. »3 poškodovani → 3 reševalna vozila«; prioriteta 1–2 še motorist; 4+ poškodovanih helikopter). Dispečer predlog
+sprejme, uredi (kljukice) ali zavrne – »Sprejmi vse« ga nikoli ne potrdi. Ob »Odobri in pošlji« dobi vsaka potrjena
+enota svojo nalogo na istem kraju; plan se izračuna enkrat za vse.
+
+**Heartbeat.** Naprava voznika (spletni zaslon, aplikacija Flet, simulator vozil) vsakih 30 s pošlje `POST /voznik/heartbeat`
+s **hitrostjo, lokacijo in potjo** (trenutni korak, preostanek, odmik od poti). Centrala vsak heartbeat shrani v
+**`podatki/heartbeat/<datum>/<enota>.json`** (seznam heartbeatov dneva; mapa: `AID_HEARTBEAT_MAPA`), dispečerju ga pokaže
+v seznamu enot (♥ starost · km/h · preostanek) in ga opozori, če ga enota na nalogi ne pošlje 75 s.
+Zgodovina: `GET /enote/{id}/heartbeat`, zadnji: `GET /heartbeat`.
+
+**Druga pot ob zastoju ali oviri.** Ob heartbeatu centrala preveri: aktivno oviro na preostanku poti, zastoj (vozilo med
+vožnjo stoji ≥ 1 min) in promet (najhitrejša pot s trenutnim prometom ni več naša). Takrat vozniku izračuna drugo pot
+(pri zastoju se izogne odseku pred vozilom), mu jo pošlje (»NOVA POT«) in jo javi dispečerju (obvestilo, zelena črtkana
+črta na karti, revizija). Blizu cilja in pogosteje kot na 2,5 min se ne preusmerja.
+
 ## Prijava in varnost
 
 - **Dispečer** se prijavi z imenom in geslom. Seja je piškotek `HttpOnly` / `SameSite=Strict`; ime v revizijski sledi

@@ -42,6 +42,9 @@ def test_celoten_krog_brez_naprave(okolje):
     faze = [r["nova_vrednost"]["faza"] for n in {n for n, _ in koraki} for r in c.db.revizije(n) if r["akcija"] == "stanje_voznika"]
     assert faze.count("na_prizoriscu") == len(koraki) and "pacient_nalozen" in faze and "dostavljeno" in faze
     assert c.naloge_voznikov.zadnje_obvestilo(eid)["stanje"] == "potrjeno"
+    # heartbeat: simulator ga pošlje ob začetku in nato vsakih 30 s; centrala ga ima in shrani v JSON
+    assert v.heartbeat.poslanih >= 1 and c.heartbeati.zadnji[eid]["lokacija"]["lat"]
+    assert c.heartbeati.zgodovina(eid)
     # položaji: zgodovina urejena, enota stoji na cilju zadnje dostave
     zg = c.polozaji.zgodovina(eid)
     assert len(zg) >= 10 and [f["seq"] for f in zg] == sorted(f["seq"] for f in zg)

@@ -387,23 +387,28 @@ class NalogeVoznikov:
             return  # brez zanke (npr. sinhroni test) -> izračuna se ob prvem branju naloge
         self.c._v_ozadju(self.izracunaj_pot(enota_id))
 
-    async def izracunaj_pot(self, enota_id: str) -> dict | None:
-        """Pot za trenutni korak z zadnjega znanega položaja. Velja kot del potrjenega plana (ODLOCITVE #37)."""
+    async def izracunaj_pot(self, enota_id: str, od: tuple | None = None, dodatni_izogibi: list | None = None,
+                            preusmeritev: dict | None = None) -> dict | None:
+        """Pot za trenutni korak z zadnjega znanega položaja (ali `od`, npr. iz heartbeata). Velja kot del potrjenega
+        plana (ODLOCITVE #37). `dodatni_izogibi`: območja (npr. zastoj), ki se jim mora nova pot izogniti."""
         k = self.trenutni(enota_id)
         e = next((x for x in self.c.enote() if x["id"] == enota_id), None)
         if not k or not e:
             return None
+        od = tuple(od) if od else (e["lat"], e["lon"])
         # aktivne ovire: pot se jim izogne (api/ovire.py); helikopter leti po zraku
-        rects, ovire = (self.c.ovire.izogibanja((e["lat"], e["lon"]), (k["lat"], k["lon"]))
+        rects, ovire = (self.c.ovire.izogibanja(od, (k["lat"], k["lon"]))
                         if getattr(self.c, "ovire", None) and e["tip"] != "helikopter" else ([], []))
-        r = await self.c.usmerjanje.izracunaj((e["lat"], e["lon"]), (k["lat"], k["lon"]), e["tip"], izogibaj=rects or None)
+        rects = list(rects) + list(dodatni_izogibi or [])
+        r = await self.c.usmerjanje.izracunaj(od, (k["lat"], k["lon"]), e["tip"], izogibaj=rects or None)
         plan = self.c.plan_aktiven()
         p = {"plan_id": plan["id"] if plan else None, "naloga_id": k["naloga_id"], "akcija": k["akcija"],
-             "od": {"lat": e["lat"], "lon": e["lon"]}, "do": {"lat": k["lat"], "lon": k["lon"]},
+             "od": {"lat": od[0], "lon": od[1]}, "do": {"lat": k["lat"], "lon": k["lon"]},
              "cas_s": r["cas_s"], "razdalja_m": r["razdalja_m"], "geometrija": r["geometrija"], "kakovost": r["kakovost"],
              "cestna": e["tip"] != "helikopter", "izracunano": self.ura(),
              "navodila": r.get("navodila", []), "opozorila": r.get("opozorila", []),
-             "zamuda_prometa_s": r.get("zamuda_prometa_s", 0), "ovire": ovire, "obvoz": bool(ovire)}
+             "zamuda_prometa_s": r.get("zamuda_prometa_s", 0), "ovire": ovire, "obvoz": bool(ovire),
+             "preusmeritev": preusmeritev}
         if self.trenutni(enota_id) != k:
             return None  # med računanjem se je korak spremenil
         self.db.izvedi("INSERT INTO voznik_pot VALUES (?,?) ON CONFLICT(enota_id) DO UPDATE SET podatki=excluded.podatki",
