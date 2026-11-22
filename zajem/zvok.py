@@ -137,7 +137,7 @@ async def predvajaj_zvocni_klic(center, klic_id: str, hitrost: float = 1.0, prek
     mapa = Path(os.environ.get("AID_PREPISI_MAPA") or pp.MAPA / "prepisi")
     zapis = pp.Prepis(mapa)  # prepis se shrani kot pri samostojnem poslušalcu
     predvajaj = pp.predvajaj_lokalno if os.environ.get("AID_PREDVAJAJ_ZVOK") == "1" else None  # še na strežniku
-    posnetki = [p for p in pp.posnetki_klica() if p.stem.split("_", 1)[-1] in pp.GOVORCI]
+    posnetki = pp.posnetki_klica()
     hitrost = max(0.25, hitrost)
     cas, n = 0.0, 0
     zanka = asyncio.get_running_loop()
@@ -146,27 +146,35 @@ async def predvajaj_zvocni_klic(center, klic_id: str, hitrost: float = 1.0, prek
         for i, posnetek in enumerate(posnetki, 1):
             if prekini and prekini():
                 break
-            oznaka, vloga = posnetek.stem.split("_", 1)
-            trajanje = pp.trajanje_s(posnetek)
+            oznaka, vloga = pp.oznaka_in_vloga(posnetek)
+            trajanje = await asyncio.to_thread(pp.trajanje_s, posnetek)
             # brskalnik dispečerja predvaja posnetek (kot da posluša klic), Whisper ga hkrati prepisuje
             center.objava.objavi("zvok_odsek", {"klic_id": klic_id, "posnetek": posnetek.name, "st": i, "skupaj": len(posnetki),
-                                                "vloga": vloga, "trajanje_s": round(trajanje, 2), "hitrost": hitrost})
-            opravila = [asyncio.to_thread(pp.prepisi_odsek, model, posnetek)]
+                                                "vloga": vloga or "klic", "trajanje_s": round(trajanje, 2), "hitrost": hitrost})
+            opravila = [asyncio.to_thread(pp.prepisi_casovno, model, posnetek)]
             if predvajaj:
                 opravila.append(asyncio.to_thread(predvajaj, posnetek))
-            besedilo = (await asyncio.gather(*opravila))[0]
-            if not predvajaj:  # odsek je »izrečen« šele ob svojem koncu (realni čas, pospešen s hitrostjo)
+            deli = (await asyncio.gather(*opravila))[0]
+            if vloga:  # NN_vloga.*: en odsek enega govorca
+                deli = [(0.0, trajanje, " ".join(t for _, _, t in deli))]
+            if not any(t for _, _, t in deli):
+                print(f"[prepis] {oznaka}: (Whisper ni razbral govora)", flush=True)
+            for od, do, besedilo in deli:
+                do = min(max(do, od), trajanje) if do else trajanje
+                if not predvajaj:  # odsek je »izrečen« šele ob svojem koncu (realni čas, pospešen s hitrostjo)
+                    await asyncio.sleep(max(0.0, zacetek + (cas + do) / hitrost - zanka.time()))
+                if prekini and prekini():
+                    break
+                if not besedilo:
+                    continue
+                v = vloga or "klicatelj"  # cel klic brez vlog v imenu: vse kot klicatelj (dispečer lahko popravi)
+                print(f"[prepis] {oznaka} {pp.GOVORCI[v]}: {besedilo}", flush=True)
+                center.dodaj_segment(klic_id, v, besedilo, cas + od, cas + do)
+                n += 1
+                await zapis.segment(f"{oznaka}-{n}", f"{pp.GOVORCI[v]}: {besedilo}")
+            if not predvajaj:
                 await asyncio.sleep(max(0.0, zacetek + (cas + trajanje) / hitrost - zanka.time()))
-            if prekini and prekini():
-                break
-            od, cas = cas, cas + trajanje
-            if not besedilo:
-                print(f"[prepis] {oznaka} {pp.GOVORCI[vloga]}: (Whisper ni razbral govora)", flush=True)
-                continue
-            print(f"[prepis] {oznaka} {pp.GOVORCI[vloga]}: {besedilo}", flush=True)
-            center.dodaj_segment(klic_id, vloga, besedilo, od, cas)
-            n += 1
-            await zapis.segment(oznaka, f"{pp.GOVORCI[vloga]}: {besedilo}")
+            cas += trajanje
     finally:
         await zapis.close()
     center.objava.objavi("prepis_stanje", {"klic_id": klic_id, "stanje": "konec", "vir": "whisper",

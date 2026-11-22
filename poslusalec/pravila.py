@@ -18,7 +18,7 @@ KRAJI = {"ljubljani": "Ljubljana", "mariboru": "Maribor", "celju": "Celje", "kra
          "kamniku": "Kamnik", "grosupljem": "Grosuplje"}
 NEGOTOVO = re.compile(r"\b(mislim|menda|nisem prepričan|nisem prepričana|morda|verjetno)\b", re.I)
 ULICA = re.compile(
-    r"((?:[A-ZČŠŽ][a-zčšž]+\s){0,2}(?:cesta|ulica|trg|pot|nabrežje|Cesta|Ulica|Trg)(?:\s(?:v|na|pod|ob)?\s?[A-ZČŠŽa-zčšž]+)?)"
+    r"((?:[A-ZČŠŽ][a-zčšž]+\s){0,2}(?:cesta|ulica|trg|pot|nabrežje|cesti|ulici|trgu|poti|nabrežju|Cesta|Ulica|Trg|Cesti|Ulici|Trgu)(?:\s(?:v|na|pod|ob)?\s?[A-ZČŠŽa-zčšž]+)?)"
     r"(?:,?\s*(?:mislim da|menda|številka)?\s*(\d+[a-zA-Z]?))?"
     r"(?:,?\s*v\s((?:novem mestu)|[A-ZČŠŽ][a-zčšž]+))?"
 )
@@ -27,6 +27,27 @@ KRAJ_KLICA = re.compile(r"kličem iz ((?:[A-ZČŠŽ]\w+)(?:\s(?:ob\s?)?\w+)?)", 
 ZNANI_KRAJI = [(r"^zagor\w*\s*(?:ob\s*)?sav", "Zagorje ob Savi"), (r"^ljubljan", "Ljubljana"), (r"^maribor", "Maribor"),
                (r"^celj", "Celje"), (r"^kranj", "Kranj"), (r"^trbovl", "Trbovlje"), (r"^hrastnik", "Hrastnik"),
                (r"^litij", "Litija"), (r"^domžal", "Domžale"), (r"^kamnik", "Kamnik")]
+
+
+def imenovalnik_ulice(ulica: str) -> str:
+    """Mestnik -> imenovalnik (»Celovški cesti« -> »Celovška cesta«, »Kongresnem trgu« -> »Kongresni trg«)."""
+    b = ulica.split()
+    if not b:
+        return ulica
+    jedro = {"cesti": "cesta", "ulici": "ulica", "poti": "pot", "trgu": "trg", "nabrežju": "nabrežje"}
+    for i, w in enumerate(b):
+        nov = jedro.get(w.lower())
+        if nov is None:
+            continue
+        b[i] = nov.capitalize() if w[0].isupper() else nov
+        zenski = nov in ("cesta", "ulica", "pot")
+        for j in range(i):  # pridevniki pred jedrom
+            if zenski and b[j].endswith("i") and len(b[j]) > 3:
+                b[j] = b[j][:-1] + "a"
+            elif nov in ("trg", "nabrežje") and b[j].endswith("em"):
+                b[j] = b[j][:-2] + ("i" if nov == "trg" else "o")
+        break
+    return " ".join(b)
 
 
 def _kraj(besedilo: str) -> str | None:
@@ -101,7 +122,7 @@ def izlusci(segmenti: list[dict], trenutni: dict[str, object] | None = None) -> 
             # --- naslov
             m = ULICA.search(t)
             if m and m.group(2):
-                ulica, hs, kraj = m.group(1).strip(), m.group(2), m.group(3)
+                ulica, hs, kraj = imenovalnik_ulice(m.group(1).strip()), m.group(2), m.group(3)
                 kraj_ime = KRAJI.get((kraj or "").lower())
                 vrednost = f"{ulica} {hs}" + (f", {kraj_ime}" if kraj_ime else "")
                 z = 0.6 if NEGOTOVO.search(m.group(0)) else 0.8

@@ -94,3 +94,14 @@ def test_dogodek_okvare_brez_enote_vprasa():
     d = izhod["zaznani_dogodki"][0]
     assert d["tip"] == "okvara_vozila" and d["parametri"]["tovor_ostane"] is True and "enota_id" not in d["parametri"]
     assert "Katero vozilo?" in izhod["vprasanja_za_klicatelja"]
+
+
+def test_naslov_v_mestniku_iz_prepisa_govora():
+    import asyncio
+    from poslusalec.ai import Poslusalec, Pravila
+    seg = [{"id": "s1", "govorec": "klicatelj", "od_s": 0, "do_s": 3,
+            "besedilo": "Halo, na Tržaški cesti 85 v Ljubljani je ženska nezavestna, ne diha."}]
+    izhod = asyncio.run(Poslusalec([Pravila()]).obdelaj(seg, [], [], []))
+    polja = {p["polje"]: p for p in izhod["posodobitve"]}
+    assert polja["naslov"]["vrednost"] == "Tržaška cesta 85, Ljubljana"
+    assert polja["naslov"]["dokazi"][0]["citat"] in seg[0]["besedilo"]

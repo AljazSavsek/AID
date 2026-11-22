@@ -80,37 +80,69 @@ async def poslusaj(dogodki, ui, mapa=None):
     return klic.path
 
 
+ZVOK = (".wav", ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".flac", ".webm")
+_VLOGE = {"dispecer": "dispecer", "dispečer": "dispecer", "operater": "dispecer",
+          "klicatelj": "klicatelj", "klicateljica": "klicatelj", "klicoci": "klicatelj", "klicoči": "klicatelj"}
+
+
 def prepisi_odsek(model, posnetek):
+    return " ".join(t for _, _, t in prepisi_casovno(model, posnetek))
+
+
+def prepisi_casovno(model, posnetek):
+    """[(od_s, do_s, besedilo)] – Whisperjevi odseki s časi znotraj posnetka."""
     odseki, _ = model.transcribe(str(posnetek), language="sl", beam_size=3,
                                  condition_on_previous_text=False)
-    return " ".join(s.text.strip() for s in odseki if s.text.strip())
+    return [(float(getattr(s, "start", 0.0) or 0.0), float(getattr(s, "end", 0.0) or 0.0), s.text.strip())
+            for s in odseki if s.text.strip()]
+
+
+def mapa_posnetkov(mapa=None):
+    return Path(mapa or os.environ.get("AID_ZVOK_MAPA") or MAPA / "zvok")
 
 
 def posnetki_klica(mapa=None):
-    posnetki = sorted(Path(mapa or MAPA / "zvok").glob("*.wav"))
+    """Vsi zvočni posnetki v mapi (po imenu). Druge datoteke (npr. Vir.txt) se preskočijo."""
+    m = mapa_posnetkov(mapa)
+    posnetki = sorted(p for p in m.glob("*") if p.is_file() and p.suffix.lower() in ZVOK and not p.name.startswith("."))
     if not posnetki:
-        raise FileNotFoundError("Manjka mapa zvok s posnetki simulacije.")
+        raise FileNotFoundError(f"V mapi {m} ni zvočnih posnetkov ({', '.join(ZVOK)}).")
     return posnetki
 
 
+def oznaka_in_vloga(posnetek):
+    """'03_dispecer.wav' -> ('03', 'dispecer'); posnetek brez vloge v imenu (npr. cel klic) -> (ime, None)."""
+    deli = Path(posnetek).stem.split("_", 1)
+    vloga = _VLOGE.get(deli[-1].strip().lower()) if len(deli) == 2 else None
+    return (deli[0] if vloga else Path(posnetek).stem), vloga
+
+
 def trajanje_s(posnetek):
-    with wave.open(str(posnetek)) as w:
-        return w.getnframes() / float(w.getframerate())
+    if Path(posnetek).suffix.lower() == ".wav":
+        try:
+            with wave.open(str(posnetek)) as w:
+                return w.getnframes() / float(w.getframerate())
+        except (wave.Error, EOFError):
+            pass  # npr. WAV s plavajočo vejico -> prek dekoderja
+    from faster_whisper.audio import decode_audio
+    return len(decode_audio(str(posnetek), sampling_rate=16000)) / 16000.0
 
 
 async def odseki_klica(model, predvajaj=None, mapa=None):
-    """Za vsak posnetek (NN_vloga.wav) hkrati predvaja in prepiše; vrne slovar z vlogo govorca.
-    `model` je WhisperModel ali karkoli z metodo transcribe (npr. rezerva iz shranjenega prepisa)."""
+    """Za vsak posnetek hkrati predvaja in prepiše. Posnetek NN_vloga.* = en odsek tega govorca;
+    posnetek brez vloge v imenu (cel klic) se razdeli na Whisperjeve odseke (govorec: klicatelj)."""
     for posnetek in posnetki_klica(mapa):
-        oznaka, vloga = posnetek.stem.split("_", 1)
-        if vloga not in GOVORCI:
-            continue
-        opravila = [asyncio.to_thread(prepisi_odsek, model, posnetek)]
+        oznaka, vloga = oznaka_in_vloga(posnetek)
+        opravila = [asyncio.to_thread(prepisi_casovno, model, posnetek)]
         if predvajaj:
             opravila.append(asyncio.to_thread(predvajaj, posnetek))
-        besedilo = (await asyncio.gather(*opravila))[0]
-        yield {"oznaka": oznaka, "vloga": vloga, "govorec": GOVORCI[vloga], "besedilo": besedilo,
-               "trajanje_s": trajanje_s(posnetek), "posnetek": posnetek.name}
+        deli = (await asyncio.gather(*opravila))[0]
+        if vloga:
+            deli = [(0.0, trajanje_s(posnetek), " ".join(t for _, _, t in deli))]
+        for od, do, besedilo in deli or [(0.0, trajanje_s(posnetek), "")]:
+            v = vloga or "klicatelj"
+            yield {"oznaka": oznaka, "vloga": v, "govorec": GOVORCI[v], "besedilo": besedilo, "od_s": od, "do_s": do,
+                   "trajanje_s": do - od, "posnetek": posnetek.name}
 
 
 async def prepis_klica(model, predvajaj):
