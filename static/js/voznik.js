@@ -112,12 +112,13 @@
     });
     let napake = 0;
     karta.on("error", (e) => {
-      if (st.karta && e && e.sourceId === "podlaga" && ++napake === 4) {
-        karta.removeLayer("podlaga"); karta.removeSource("podlaga");
-        karta.addSource("podlaga", { type: "raster", tiles: rezerva, tileSize: 256, attribution: "© OpenStreetMap, © CARTO" });
-        karta.addLayer({ id: "podlaga", type: "raster", source: "podlaga", paint: { "raster-brightness-max": 0.85 } }, "pot-obroba");
+      // glavna podlaga ostane (karta nikoli ne izgine); po več napakah se POD njo doda rezervna, ki zapolni luknje
+      if (st.karta && e && e.sourceId === "podlaga" && ++napake === 4 && !karta.getSource("rezerva")) {
+        karta.addSource("rezerva", { type: "raster", tiles: rezerva, tileSize: 256, attribution: "© OpenStreetMap, © CARTO" });
+        karta.addLayer({ id: "rezerva", type: "raster", source: "rezerva", paint: { "raster-brightness-max": 0.85, "raster-saturation": -0.3 } }, "podlaga");
       }
     });
+    karta.on("sourcedata", (e) => { if (e.sourceId === "podlaga" && e.tile) napake = 0; });
     karta.on("dragstart", () => nastaviSledi(false));
     await new Promise((r) => karta.on("load", r));
     karta.addSource("pot", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
