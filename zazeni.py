@@ -84,6 +84,19 @@ def demo_kode() -> dict:
         return {}
 
 
+def stanje_prepisa() -> str:
+    """Ali bo zvočni klic tekel z Whisperjem (isti Python kot strežnik: sys.executable)."""
+    import importlib.util
+    if importlib.util.find_spec("faster_whisper") is None:
+        return (f"Prepis govora: ✖ faster-whisper ni nameščen v {sys.executable}\n"
+                "    -> source .venv/bin/activate && pip install -r requirements-zvok.txt (do takrat: shranjen prepis)")
+    ime = os.environ.get("AID_WHISPER_MODEL", "small")
+    hf = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub"
+    if any(hf.glob(f"models--*faster-whisper-{ime}")):
+        return f"Prepis govora: Whisper ({ime}), model je že prenesen"
+    return f"Prepis govora: Whisper ({ime}) – ob prvem zvočnem klicu se model prenese s huggingface.co (potreben internet)"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8000)
@@ -162,6 +175,7 @@ def main() -> int:
     disp = demo_dispecerji() if os.environ.get("AID_DISPECER_DEMO", "1") == "1" else []
     if disp:
         print("  Prijava dispečerja: " + ", ".join(f"{d['ime']} / {d['geslo']}" for d in disp))
+    print("  " + stanje_prepisa())
     print("  Ustavite s Ctrl+C.")
     print("═" * 64 + "\n")
     if not a.brez_brskalnika:
