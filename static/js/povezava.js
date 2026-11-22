@@ -177,29 +177,54 @@
   const stanjePromise = () => (stanje = stanje || AID.api("/ploscice/stanje").catch(() => ({ karta: false, promet: false })));
 
   function rezerva(karta) {
-    return L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+    // rezervna podlaga LEŽI POD glavno: ploščice glavne, ki se naložijo, jo prekrijejo; luknje zapolni rezerva
+    return L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19, zIndex: 0, attribution: "© OpenStreetMap, © CARTO" }).addTo(karta);
+  }
+  // manj zahtevkov: ploščice se ne nalagajo med animacijo povečave, rob karte ostane v pomnilniku
+  const VARCNO = { maxZoom: 19, updateWhenZooming: false, keepBuffer: 4 };
+  /* Neuspela ploščica (npr. strežnik začasno omejuje, 503/429) se ne zavrže: do 4 poskusi s premorom 1,5–12 s. */
+  function ponavljaj(sloj) {
+    sloj.on("tileerror", (e) => {
+      const t = e.tile, n = Number(t.dataset.poskus || 0) + 1;
+      if (n > 4) return;
+      t.dataset.poskus = String(n);
+      setTimeout(() => { if (sloj._map) t.src = sloj.getTileUrl(e.coords) + "?p=" + n; }, 1500 * 2 ** (n - 1));
+    });
+    sloj.on("tileload", (e) => { delete e.tile.dataset.poskus; });
   }
 
-  /* Doda podlago na karto. Če posrednik ne odgovarja (več napak zapored), preklopi na rezervo. */
+  /* Doda podlago na karto. Glavni sloj se ob napakah NE odstrani (karta nikoli ne izgine): ponavlja neuspele
+   * ploščice, po več zaporednih napakah pa pod njim doda rezervno podlago. */
   AID.podlagaKarte = async function (karta, { promet = false } = {}) {
     const st = await stanjePromise();
     const izid = { promet: null };
     if (!st.karta) { rezerva(karta); return izid; }
-    const sloj = L.tileLayer("/ploscice/karta/{z}/{x}/{y}.png", { maxZoom: 19, attribution: AID.esc(st.atribucija || "") }).addTo(karta);
-    let napake = 0, uspehi = 0;
-    sloj.on("tileload", () => { uspehi++; napake = 0; });
+    const sloj = L.tileLayer("/ploscice/karta/{z}/{x}/{y}.png", { ...VARCNO, zIndex: 1, attribution: AID.esc(st.atribucija || "") }).addTo(karta);
+    ponavljaj(sloj);
+    let napake = 0, imaRezervo = false;
+    sloj.on("tileload", () => { napake = 0; });
     sloj.on("tileerror", () => {
-      if (++napake >= 4 && karta.hasLayer(sloj)) { karta.removeLayer(sloj); rezerva(karta); if (izid.promet) karta.removeLayer(izid.promet); }
+      if (++napake >= 6 && !imaRezervo) { imaRezervo = true; rezerva(karta); }
     });
     if (promet && st.promet) {
-      const tok = L.tileLayer("/ploscice/promet/{z}/{x}/{y}.png", { maxZoom: 19, opacity: 0.85 });
-      const nes = L.tileLayer("/ploscice/nesrece/{z}/{x}/{y}.png", { maxZoom: 19 });
+      const tok = L.tileLayer("/ploscice/promet/{z}/{x}/{y}.png", { ...VARCNO, zIndex: 2, opacity: 0.85 });
+      const nes = L.tileLayer("/ploscice/nesrece/{z}/{x}/{y}.png", { ...VARCNO, zIndex: 3 });
+      [tok, nes].forEach(ponavljaj);
       izid.promet = L.layerGroup([tok, nes]);
-      let napakePrometa = 0;
-      [tok, nes].forEach((sl) => sl.on("tileerror", () => {
-        // sloj prometa ne deluje (npr. Traffic API ni vklopljen) -> skrij sloj in stikalo
-        if (++napakePrometa === 6) { karta.removeLayer(izid.promet); izid.onIzpad && izid.onIzpad(); }
-      }));
+      let napakePrometa = 0, preverjam = false;
+      [tok, nes].forEach((sl) => {
+        sl.on("tileload", () => { napakePrometa = 0; });
+        sl.on("tileerror", async () => {
+          // sloj skrijemo le, če ga strežnik res nima (npr. Traffic API ni vklopljen), ne ob začasni omejitvi
+          if (++napakePrometa < 6 || preverjam) return;
+          preverjam = true;
+          try {
+            const zdaj = await AID.api("/ploscice/stanje");
+            if (!zdaj.promet) { karta.removeLayer(izid.promet); izid.onIzpad && izid.onIzpad(); }
+          } catch (_) { /* brez odgovora: sloj ostane */ }
+          napakePrometa = 0; preverjam = false;
+        });
+      });
     }
     return izid;
   };

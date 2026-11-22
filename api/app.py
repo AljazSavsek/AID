@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from dnevnik.shramba import Shramba
-from karta.ploscice import NiNaVoljo, Ploscice
+from karta.ploscice import NiNaVoljo, Omejitev, Ploscice
 from usmerjanje.servis import nastavi_dnevnik
 from voznik.avtentikacija import NapakaPrijave
 from voznik.ekipa import NapakaEkipe
@@ -176,7 +176,7 @@ def ploscica_v_obmocju(z: int, x: int, y: int) -> bool:
 
 
 # omejitve zahtevkov (na dispečerja/napravo/IP), da ne gre kvota zunanjih ponudnikov
-OMEJITVE = {"ploscice": 900, "poti": 30, "pot": 120, "eta": 120, "prijava": 10, "javnost": 60}
+OMEJITVE = {"ploscice": 2400, "poti": 30, "pot": 120, "eta": 120, "prijava": 10, "javnost": 60}
 
 
 def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: Dispecerji | None = None) -> FastAPI:
@@ -550,20 +550,25 @@ def ustvari_app(center: Center | None = None, ozadje: bool = True, dispecerji: D
 
     @app.get("/ploscice/stanje")
     async def ploscice_stanje():
-        return {"karta": ploscice.na_voljo("karta"), "promet": ploscice.na_voljo("promet"),
+        return {"karta": ploscice.na_voljo("karta"), "promet": ploscice.na_voljo("promet"), "stevec": ploscice.stevec,
                 "atribucija": os.environ.get("AID_KARTA_ATRIBUCIJA", "Podlaga karte in promet: zunanji vir")}
 
     @app.get("/ploscice/{sloj}/{z}/{x}/{y}.png")
     async def ploscica(sloj: str, z: int, x: int, y: int, request: Request):
-        omeji("ploscice", request)
         if not ploscica_v_obmocju(z, x, y):
             raise HTTPException(404, "ploščica izven območja")
-        try:
-            vsebina = await ploscice.ploscica(sloj, z, x, y)
-        except NiNaVoljo:
-            raise HTTPException(404, "ploščica ni na voljo")
-        return Response(vsebina, media_type="image/png",
-                        headers={"Cache-Control": "public, max-age=" + ("120" if sloj in ("promet", "nesrece") else "86400")})
+        glave = {"Cache-Control": "private, max-age=" + ("120" if sloj in ("promet", "nesrece") else "86400")}
+        vsebina = ploscice.iz_predpomnilnika(sloj, z, x, y)
+        if vsebina is None:  # v omejitev štejejo le ploščice, ki jih je treba prenesti (premikanje karte jih ne porabi)
+            omeji("ploscice", request)
+            try:
+                vsebina = await ploscice.ploscica(sloj, z, x, y)
+            except Omejitev:
+                # ponudnik začasno omejuje: brskalnik ploščico poskusi znova, karta ostane
+                return Response(status_code=503, headers={"Retry-After": "2", "Cache-Control": "no-store"})
+            except NiNaVoljo:
+                raise HTTPException(404, "ploščica ni na voljo")
+        return Response(vsebina, media_type="image/png", headers=glave)
 
     # ---------- demo ----------
     @app.post("/demo/klic-zvok")
