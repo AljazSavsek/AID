@@ -30,7 +30,7 @@ def anon(app):
     ("get", "/cakajoci"), ("get", "/ekipe/predlogi"), ("get", "/ekipe/sporocila"), ("get", "/eta?lat=46.05&lon=14.5"),
     ("post", "/klic/zacni"), ("post", "/dogodek"), ("post", "/plan/x/potrdi"), ("post", "/demo/izpad"),
     ("post", "/poti"), ("get", "/pot?enota_id=RV-1&lat=46.05&lon=14.5"), ("get", "/ploscice/stanje"),
-    ("get", "/ploscice/karta/12/2218/1453.png"), ("get", "/interno/zdravje"), ("get", "/prepis/stanje"), ("post", "/demo/klic-zvok"),
+    ("get", "/ploscice/karta/12/2218/1453.png"), ("get", "/interno/zdravje"), ("get", "/prepis/stanje"), ("post", "/demo/klic-zvok"), ("get", "/klic/x/zvok/01_dispecer.wav"),
 ])
 def test_brez_prijave_zavrnjeno(anon, metoda, pot):
     r = getattr(anon, metoda)(pot, **({"json": {}} if metoda == "post" else {}))

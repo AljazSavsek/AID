@@ -75,6 +75,7 @@
   $("tel-glavni").onclick = async () => {
     try {
       if (S.klic && S.klic.stanje === "v_teku") {
+        if (AID.ustaviZvok) AID.ustaviZvok();
         const k = await AID.api(`/klic/${S.klic.id}/koncaj`, { metoda: "POST" });
         S.klic = { ...S.klic, ...k };
         izrisiTelefon();
@@ -96,6 +97,7 @@
       const k = q.demo === "zvok" ? await AID.api("/demo/klic-zvok", { metoda: "POST", telo: { hitrost } })
         : await AID.api("/klic/zacni", { metoda: "POST", telo: { cakajoci_id: q.id } });
       nastaviKlic({ ...k, omrezje: q.omrezje, segmenti: [], predlogi: [] });
+      if (AID.ponoviZgodnje) AID.ponoviZgodnje(k.id);
       S.cakajoci = await AID.api("/cakajoci");
       izrisiVrsto(); izrisiTelefon();
     }
@@ -747,22 +749,45 @@
   function nastaviModel(m) {
     const el = $("st-prepis");
     if (!m || (S.klic && S.klic.stanje === "v_teku" && S.prepisVZivo)) return;
-    el.textContent = OPIS_MODELA[m.stanje] || m.stanje;
+    el.textContent = m.stanje === "nalagam" && m.preneseno_mb ? `prenašam Whisper … ${m.preneseno_mb} MB` : (OPIS_MODELA[m.stanje] || m.stanje);
     el.title = m.razlog || ("Whisper " + (m.model || ""));
     el.className = "pika" + (m.stanje === "napaka" || m.stanje === "ni_namescen" ? " napaka" : "");
     if (m.stanje === "napaka") AID.obvestilo("Prepis govora", m.razlog, true, 8000);
   }
   AID.na("prepis_model", nastaviModel);
   AID.prijava.then(() => AID.api("/prepis/stanje")).then(nastaviModel).catch(() => {});
-  AID.na("prepis_stanje", (p) => {
-    if (!S.klic || p.klic_id !== S.klic.id) return;
+
+  // dogodki, ki pridejo, preden brskalnik ve za id sprejetega klica, se predvajajo ob nastaviKlic
+  const zgodnji = [];
+  const zaKasneje = (tip, p) => { zgodnji.push({ tip, p, t: Date.now() }); if (zgodnji.length > 20) zgodnji.shift(); };
+  AID.ponoviZgodnje = (klicId) => zgodnji.splice(0).filter((x) => x.p.klic_id === klicId && Date.now() - x.t < 15000)
+    .forEach((x) => (x.tip === "zvok" ? predvajajOdsek : prepisStanje)(x.p));
+
+  let zvok = null;
+  function predvajajOdsek(o) {
+    if (!S.klic || o.klic_id !== S.klic.id) return zaKasneje("zvok", o);
+    $("st-prepis").textContent = `v živo (Whisper) ${o.st}/${o.skupaj}`;
+    if ($("tel-utisaj").classList.contains("vklopljen")) return;  // dispečer je utišal klic
+    if (zvok) zvok.pause();
+    zvok = new Audio(`/klic/${encodeURIComponent(o.klic_id)}/zvok/${encodeURIComponent(o.posnetek)}`);
+    zvok.playbackRate = Math.min(4, o.hitrost || 1);
+    zvok.play().catch((e) => AID.obvestilo("Zvok klica", "Brskalnik ni dovolil predvajanja: " + e.message, true, 5000));
+  }
+  AID.na("zvok_odsek", predvajajOdsek);
+  AID.ustaviZvok = () => { if (zvok) zvok.pause(); };
+  $("tel-utisaj").addEventListener("click", () => { if (zvok && $("tel-utisaj").classList.contains("vklopljen")) zvok.pause(); });
+
+  function prepisStanje(p) {
+    if (!S.klic || p.klic_id !== S.klic.id) return zaKasneje("stanje", p);
     const el = $("st-prepis");
     S.prepisVZivo = p.stanje === "v_zivo";
     el.textContent = p.stanje === "nalagam" ? "nalagam Whisper …" : p.stanje === "konec" ? "končan (Whisper)"
       : p.stanje === "napaka" ? "ni na voljo – ročni zapis" : "v živo (Whisper)";
     el.className = "pika" + (p.stanje === "napaka" ? " napaka" : "");
+    if (p.stanje === "konec" || p.stanje === "napaka") { S.prepisVZivo = false; if (zvok && p.stanje === "napaka") zvok.pause(); }
     if (p.stanje !== "konec") AID.obvestilo("Prepis govora", p.sporocilo, p.stanje === "napaka", 6000);
-  });
+  }
+  AID.na("prepis_stanje", prepisStanje);
   (AID.naPrerazporeditev = AID.naPrerazporeditev || []).push((nalogaId, enota) => {
     if (S.posiljanje && S.posiljanje.naloga_id === nalogaId) { S.posiljanje.enota = enota; S.posiljanje.stanje = "poslano"; izrisiNapredek(); }
   });

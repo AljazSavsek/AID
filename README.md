@@ -95,7 +95,8 @@ pip install -r requirements-zvok.txt
 Besedilo klica prihaja **samo iz Whisperja** – v aplikaciji ni vnaprej določenega besedila. Strežnik naloži model ob
 zagonu (prvič ga prenese, `small` ~460 MB, potreben internet); stanje je v »Stanje sistema → Prepis govora«. Če Whisper
 ni na voljo, aplikacija pokaže razlog, klic pa dispečer zapisuje ročno. Preverjanje: `python diagnoza_zvok.py`. Zvok ostane na
-strežniku; za predvajanje na tem računalniku nastavite `AID_PREDVAJAJ_ZVOK=1`, model z `AID_WHISPER_MODEL`.
+Zvok klica se predvaja v brskalniku dispečerja (gumb »Utišaj« ga utiša), prepis vsakega odseka pa se izpiše tudi v
+terminal (`[prepis] …`). Model izberete z `AID_WHISPER_MODEL` (npr. `base` je hitrejši).
 Samostojni poslušalec (samo prepis v konzolo): `poslusalec/ZAZENI.bat` (Windows) ali `poslusalec/zazeni.sh` (Linux/macOS).
 
 ## Prijava in varnost
