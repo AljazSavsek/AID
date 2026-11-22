@@ -25,13 +25,16 @@
   const KLJUCNA = ["prioriteta", "predlagana_enota", "dodatne_enote"];
   // kartica »Dodatne enote« je vidna le, ko jo AI predlaga ali jo dispečer vnese (večja nesreča)
   const vidno = (d) => !d.leSPredlogom || predlogiPolja(d.polje).some((p) => p.stanje !== "zastarelo") || S.urejanje[d.polje]
-    || (d.polje === "dodatne_enote" && stPoskodovanih() >= 2);
+    || (d.polje === "dodatne_enote" && najvecDodatnih() > 0);
   // število poškodovanih (potrjeno ali predlog AI) -> koliko enot sme dispečer poslati (vozilo na poškodovanega + motorist + helikopter)
   function stPoskodovanih() {
     const p = potrjenZa("stevilo_poskodovanih") || odprtiZa("stevilo_poskodovanih")[0];
     return p ? Number(p.vrednost) || 0 : 0;
   }
-  const najvecDodatnih = () => (stPoskodovanih() >= 2 ? stPoskodovanih() + 1 : 0);
+  const vrednostPolja = (polje) => { const p = potrjenZa(polje) || odprtiZa(polje)[0]; return p ? p.vrednost : null; };
+  // enako kot strežnik (Center.najvec_dodatnih): ≥ 2 poškodovanih -> poškodovani + 1; prometna nesreča s P1 -> vsaj motorist
+  const najvecDodatnih = () => Math.max(stPoskodovanih() >= 2 ? stPoskodovanih() + 1 : 0,
+    vrednostPolja("vrsta_dogodka") === "prometna_nesreca" && Number(vrednostPolja("prioriteta")) === 1 ? 1 : 0);
   const dodatne = () => { const p = potrjenZa("dodatne_enote") || odprtiZa("dodatne_enote")[0]; return (p && Array.isArray(p.vrednost)) ? p.vrednost : []; };
   const VRSTE = { prometna_nesreca: "Prometna nesreča", padec: "Padec", bolecina_v_prsih: "Bolečina v prsih", nezavest: "Nezavest", porod: "Porod", drugo: "Drugo" };
   const PRIORITETE = { 1: "1 – življenjsko ogrožen", 2: "2 – zelo nujno", 3: "3 – nujno", 4: "4 – manj nujno", 5: "5 – ni nujno" };

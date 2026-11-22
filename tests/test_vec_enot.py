@@ -97,3 +97,12 @@ def test_vec_enot_dovoljeno_glede_na_stevilo_poskodovanih(cl):
     cl.post(f"/klic/{kid}/rocno", json={"polje": "dodatne_enote", "vrednost": ostale[:3]})
     r = cl.post(f"/klic/{kid}/odobri")
     assert r.status_code == 200 and len(r.json()["dodatne_naloge"]) == 3
+
+
+def test_predlog_ai_je_vedno_v_meji():
+    """Kar predlaga AI, mora strežnik ob odobritvi sprejeti (npr. prometna nesreča P1, en poškodovani -> še motorist)."""
+    for n in range(0, 7):
+        for prio in range(1, 6):
+            for vrsta in ("prometna_nesreca", "padec", None):
+                assert Center.potrebne_enote(n, prio, vrsta)["skupaj"] - 1 <= Center.najvec_dodatnih(n, prio, vrsta)
+    assert Center.najvec_dodatnih(1, 1, "prometna_nesreca") == 1 and Center.najvec_dodatnih(1, 3, "padec") == 0
